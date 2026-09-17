@@ -158,7 +158,8 @@ main{padding:12px 12px 0}
 .set-list .btn small{color:var(--fg3);font-weight:400;margin-left:auto;font-size:12px}
 .about{font-size:13px;color:var(--fg3);line-height:1.6;margin-top:14px}
 .sync{background:var(--card);border-radius:var(--r);padding:12px;margin-bottom:14px}
-.sync .st{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:10px}
+.sync .st{display:flex;align-items:flex-start;gap:8px;font-size:14px;margin-bottom:10px;white-space:pre-line;line-height:1.5}
+.sync .st .dot{margin-top:6px}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--fg3);flex:none}
 .dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.err{background:var(--danger)}.dot.load{background:var(--warn)}
 .sync .rowb{display:flex;gap:8px;margin-top:8px}
@@ -262,7 +263,7 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
         <div class="st"><span class="dot" id="syncDot"></span><span id="syncText">연결 안 됨 · 이 기기에만 저장</span></div>
         <div class="rowb"><input id="syncCode" placeholder="연결 코드 (10자 이상)" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn sm sec" id="btnCodeGen">새 코드</button></div>
         <div class="rowb"><button class="btn pri" id="btnSyncConnect">연결</button><button class="btn sec" id="btnSyncOff">연결 해제</button></div>
-        <div class="rowb"><button class="btn sec" id="btnSyncDiag">🩺 동기화 상태 점검</button></div>
+        <div class="rowb"><button class="btn sec" id="btnSyncNow">🔄 지금 동기화</button><button class="btn sec" id="btnSyncDiag">🩺 상태 점검</button></div>
         <pre class="diag hidden" id="diagOut"></pre>
         <p class="hint">같은 코드를 폰과 PC에 넣으면 기록과 사진이 실시간으로 합쳐집니다. 코드가 곧 비밀번호이니 남에게 알려주지 마세요. 코드를 잃으면 데이터를 못 찾으니 메모해 두세요.</p>
         <details class="guide"><summary>처음 한 번: Firebase 콘솔 설정 방법</summary>
@@ -615,7 +616,11 @@ function loadSynced(){try{mediaSynced=new Set(JSON.parse(localStorage.getItem('l
 function markSynced(id){mediaSynced.add(id);try{localStorage.setItem('ledger.mediaSynced:'+syncCode,JSON.stringify([...mediaSynced]))}catch{}}
 const syncOn=()=>!!(fb&&syncCode&&syncState.status==='on');
 function setSync(status,msg){syncState={status,msg};renderSyncStatus()}
-function renderSyncStatus(){const d=$('#syncDot'),t=$('#syncText');if(!d)return;d.className='dot '+({on:'on',error:'err',loading:'load',off:''}[syncState.status]||'');t.textContent=syncState.status==='off'?'연결 안 됨 · 이 기기에만 저장':syncState.msg+(syncCode?` · 코드 ${syncCode.slice(0,3)}…${syncCode.slice(-2)}`:'')}
+let cloudCount=-1;
+function renderSyncStatus(){const d=$('#syncDot'),t=$('#syncText');if(!d)return;d.className='dot '+({on:'on',error:'err',loading:'load',off:''}[syncState.status]||'');
+  if(syncState.status==='off'){t.textContent='연결 안 됨 · 이 기기에만 저장';return}
+  const cnt=syncState.status==='on'&&cloudCount>=0?` · 클라우드 ${cloudCount}건 · 이 기기 ${live().length}건`:'';
+  t.textContent=`${syncState.msg}${cnt}\n코드: ${syncCode}`}
 function errMsg(e){const c=e?.code||'';const m={'permission-denied':'권한 거부 — Firestore 규칙을 확인하세요','unavailable':'서버에 연결할 수 없음 — 인터넷을 확인하세요','not-found':'Firestore 데이터베이스가 아직 없습니다 — 콘솔에서 만들어 주세요','failed-precondition':'Firestore가 준비되지 않았습니다 — 콘솔에서 데이터베이스를 만들어 주세요','resource-exhausted':'무료 사용량 초과 — 내일 다시 시도','invalid-argument':'문서가 너무 큽니다','timeout':'서버 응답 없음 — 통신망이 실시간 연결을 막거나 인터넷이 불안정합니다'}[c];return (m||e?.message||String(e))+(c?` (${c})`:'')}
 const LS_LP='ledger.forceLongPolling';
 let forceLP=localStorage.getItem(LS_LP)==='1', fbMods=null, fbAppN=0;
@@ -644,10 +649,11 @@ async function connectSync(code){
   setSync('loading','연결 중…');
   try{await loadFirebase()}catch(e){console.warn(e);setSync('error','동기화 모듈을 불러오지 못했습니다 (인터넷 확인)');toast('동기화 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요',3000);return false}
   let first=true;const myUnsub=fb.fs.onSnapshot(colRecords(),{includeMetadataChanges:false},snap=>{
-    let changed=false;
+    let changed=false;cloudCount=0;snap.forEach(d=>{if(!d.data().deleted)cloudCount++});
     for(const ch of snap.docChanges()){if(ch.type==='removed')continue;if(applyRemote(ch.doc.data()))changed=true}
     if(first){first=false;setSync('on','연결됨 · 실시간 동기화 중'+(forceLP?' (롱폴링)':''));const remote=new Map();snap.forEach(d=>remote.set(d.id,d.data()));pushLocalNewer(remote);pushMissingMedia()}
     if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}
+    renderSyncStatus();
   },err=>{console.warn(err);setSync('error',errMsg(err));toast('동기화 오류: '+errMsg(err),4000)});
   fbUnsub=myUnsub;
   // 감시: 12초 안에 첫 응답이 없으면 원인을 직접 조사
@@ -702,7 +708,7 @@ function pullMedia(id,kind,rec){const k=id+':'+kind;if(pulling.has(k))return pul
   }catch(e){console.warn(e);syncNote('사진 내려받기 실패: '+errMsg(e));return null}finally{pulling.delete(k)}})();pulling.set(k,p);return p}
 function reloadVisibleMedia(){document.querySelectorAll('img[data-mid]:not([src])').forEach(lazy)}
 function refreshOpenDetail(){if(!uiStack.some(x=>x.tag==='L-detail'))return;const r=records.find(x=>x.id===detailId);if(r&&!r.deleted)renderDetail(r);else{uiBack();toast('다른 기기에서 삭제된 기록입니다')}}
-async function fullReconcile(){if(!syncOn())return;try{const snap=await fb.fs.getDocs(colRecords());const remote=new Map();let changed=false;snap.forEach(d=>{remote.set(d.id,d.data());if(applyRemote(d.data()))changed=true});pushLocalNewer(remote);await pushMissingMedia();if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}}catch(e){console.warn(e);syncNote('동기화 확인 실패: '+errMsg(e))}}
+async function fullReconcile(){if(!syncOn())return null;try{const snap=await withTimeout(fb.fs.getDocs(colRecords()),15000);const remote=new Map();let changed=0;cloudCount=0;snap.forEach(d=>{const x=d.data();remote.set(d.id,x);if(!x.deleted)cloudCount++;if(applyRemote(x))changed++});let pushed=0;for(const r of records){const rem=remote.get(r.id);if(!rem||(r.updated||0)>(rem.updated||0)){pushRecord(r);pushed++}}await pushMissingMedia();if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}renderSyncStatus();return {cloud:cloudCount,local:live().length,pulled:changed,pushed}}catch(e){console.warn(e);syncNote('동기화 확인 실패: '+errMsg(e));return null}}
 window.addEventListener('online',()=>{if(!syncCode)return;if(syncState.status==='on')fullReconcile();else connectSync(syncCode)});
 
 async function syncDiag(){
@@ -729,6 +735,7 @@ $('#btnCodeGen').onclick=()=>{const A='abcdefghjkmnpqrstuvwxyz23456789';const a=
 $('#btnSyncConnect').onclick=async()=>{const b=$('#btnSyncConnect');b.disabled=true;try{if(await connectSync($('#syncCode').value))toast('연결 중… 최대 20초 정도 걸릴 수 있습니다')}finally{b.disabled=false}};
 $('#btnSyncOff').onclick=()=>{if(!syncCode){toast('연결된 코드가 없습니다');return}actionSheet('연결을 해제해도 이 기기의 기록은 남습니다',[{label:'연결 해제',danger:true,fn:()=>{disconnectSync(false);$('#syncCode').value='';toast('연결을 해제했습니다')}}])};
 $('#btnSyncDiag').onclick=()=>syncDiag().catch(e=>toast('점검 실패: '+e.message));
+$('#btnSyncNow').onclick=async()=>{if(!syncCode){toast('먼저 연결 코드를 넣고 연결을 누르세요');return}if(!syncOn()){toast('연결이 안 된 상태입니다. 연결을 다시 눌러 주세요');return}const b=$('#btnSyncNow');b.disabled=true;toast('동기화 중…',2000);try{const r=await fullReconcile();if(r)toast(`클라우드 ${r.cloud}건 · 이 기기 ${r.local}건 (받음 ${r.pulled} · 보냄 ${r.pushed})`,4000)}finally{b.disabled=false}};
 
 /* ========== 시작 ========== */
 setTab(tab);
