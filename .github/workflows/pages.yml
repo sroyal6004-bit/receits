@@ -1,0 +1,45 @@
+# 기본 브랜치에 푸시할 때마다 GitHub Pages에 자동 배포
+name: GitHub Pages 배포
+
+on:
+  push:
+    branches: ['**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # 저장소의 기본 브랜치에서만 배포 (브랜치 이름이 바뀌어도 그대로 동작)
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 배포 파일 준비 (서비스워커 캐시 버전을 커밋 해시로 교체)
+        run: |
+          mkdir -p _site
+          cp index.html manifest.json sw.js icon-192.png icon-512.png _site/
+          sed -i "s/const CACHE = 'ledger-v1'/const CACHE = 'ledger-${GITHUB_SHA::8}'/" _site/sw.js
+          grep -q "ledger-${GITHUB_SHA::8}" _site/sw.js
+
+      - uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4

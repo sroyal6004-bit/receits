@@ -146,6 +146,18 @@ main{padding:12px 12px 0}
 .set-list .btn{justify-content:flex-start;background:var(--card);padding:0 16px;min-height:52px}
 .set-list .btn small{color:var(--fg3);font-weight:400;margin-left:auto;font-size:12px}
 .about{font-size:13px;color:var(--fg3);line-height:1.6;margin-top:14px}
+.sync{background:var(--card);border-radius:var(--r);padding:12px;margin-bottom:14px}
+.sync .st{display:flex;align-items:center;gap:8px;font-size:14px;margin-bottom:10px}
+.dot{width:10px;height:10px;border-radius:50%;background:var(--fg3);flex:none}
+.dot.on{background:var(--ok);box-shadow:0 0 8px var(--ok)}.dot.err{background:var(--danger)}.dot.load{background:var(--warn)}
+.sync .rowb{display:flex;gap:8px;margin-top:8px}
+.sync input{font-family:ui-monospace,Menlo,Consolas,monospace;letter-spacing:.5px}
+pre.diag{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;line-height:1.5;white-space:pre-wrap;word-break:break-all;margin:10px 0 0;max-height:220px;overflow:auto}
+details.guide{margin-top:10px;font-size:13px;color:var(--fg2)}
+details.guide summary{cursor:pointer;font-weight:600;color:var(--fg)}
+details.guide ol{padding-left:18px;line-height:1.6}
+details.guide code{background:var(--bg2);padding:1px 5px;border-radius:5px;font-size:12px}
+details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radius:10px;padding:10px;font-size:12px;white-space:pre-wrap;user-select:all}
 </style>
 </head>
 <body>
@@ -234,6 +246,32 @@ main{padding:12px 12px 0}
   <div class="sheet" role="dialog" aria-modal="true">
     <div class="sh"><span class="grab"></span><button class="iconbtn" data-back aria-label="닫기">✕</button><h2>설정 · 백업</h2><span style="width:44px"></span></div>
     <div class="sc">
+      <label class="lbl">기기 간 동기화 (Firebase)</label>
+      <div class="sync">
+        <div class="st"><span class="dot" id="syncDot"></span><span id="syncText">연결 안 됨 · 이 기기에만 저장</span></div>
+        <div class="rowb"><input id="syncCode" placeholder="연결 코드 (10자 이상)" autocomplete="off" autocapitalize="off" spellcheck="false"><button class="btn sm sec" id="btnCodeGen">새 코드</button></div>
+        <div class="rowb"><button class="btn pri" id="btnSyncConnect">연결</button><button class="btn sec" id="btnSyncOff">연결 해제</button></div>
+        <div class="rowb"><button class="btn sec" id="btnSyncDiag">🩺 동기화 상태 점검</button></div>
+        <pre class="diag hidden" id="diagOut"></pre>
+        <p class="hint">같은 코드를 폰과 PC에 넣으면 기록과 사진이 실시간으로 합쳐집니다. 코드가 곧 비밀번호이니 남에게 알려주지 마세요. 코드를 잃으면 데이터를 못 찾으니 메모해 두세요.</p>
+        <details class="guide"><summary>처음 한 번: Firebase 콘솔 설정 방법</summary>
+          <ol>
+            <li><a href="https://console.firebase.google.com/project/receits-4e19e/firestore" target="_blank" rel="noopener">Firebase 콘솔 → receits 프로젝트 → 빌드 → Firestore Database</a></li>
+            <li><b>데이터베이스 만들기</b> → 위치 <code>asia-northeast3 (서울)</code> → <b>프로덕션 모드</b> → 만들기</li>
+            <li>위쪽 <b>규칙</b> 탭 → 내용을 전부 지우고 아래를 붙여넣기 → <b>게시</b></li>
+          </ol>
+<pre>rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /spaces/{code}/{document=**} {
+      allow read, write: if code.size() >= 10;
+    }
+  }
+}</pre>
+          <p>끝나면 이 화면에서 <b>새 코드 → 연결</b>을 누르고, 다른 기기에도 같은 코드를 넣으세요. 잘 안 되면 <b>동기화 상태 점검</b>을 눌러 나온 내용을 알려 주세요.</p>
+        </details>
+      </div>
+      <label class="lbl">백업</label>
       <div class="set-list">
         <button class="btn" id="btnExport">📤 데이터 백업 (JSON)<small>사진 제외 · 가벼움</small></button>
         <button class="btn" id="btnExportFull">🗂 전체 백업 (사진 포함)<small>용량 큼</small></button>
@@ -291,7 +329,7 @@ async function idbGet(id){const d=await db();return new Promise((res,rej)=>{cons
 async function idbDel(id){const d=await db();return new Promise((res,rej)=>{const t=d.transaction('media','readwrite');t.objectStore('media').delete(id);t.oncomplete=res;t.onerror=()=>rej(t.error)})}
 async function idbAll(){const d=await db();return new Promise((res,rej)=>{const q=d.transaction('media').objectStore('media').getAll();q.onsuccess=()=>res(q.result||[]);q.onerror=()=>rej(q.error)})}
 const urlCache=new Map(); // `${id}:t` | `${id}:f` -> objectURL
-async function mediaURL(id,kind='t'){const k=id+':'+kind;if(urlCache.has(k))return urlCache.get(k);let rec=null;try{rec=await idbGet(id)}catch{}if(!rec)return null;const blob=kind==='t'?(rec.thumb||rec.blob):rec.blob;if(!blob)return null;const u=URL.createObjectURL(blob);urlCache.set(k,u);return u}
+async function mediaURL(id,kind='t'){const k=id+':'+kind;if(urlCache.has(k))return urlCache.get(k);let rec=null;try{rec=await idbGet(id)}catch{}let blob=kind==='t'?(rec?.thumb||rec?.blob):rec?.blob;if(!blob&&syncOn())blob=await pullMedia(id,kind,rec);if(!blob)return null;if(urlCache.has(k))return urlCache.get(k);const u=URL.createObjectURL(blob);urlCache.set(k,u);return u}
 function dropCache(id){for(const k of [id+':t',id+':f']){if(urlCache.has(k)){URL.revokeObjectURL(urlCache.get(k));urlCache.delete(k)}}}
 
 /* 지연 로딩 */
@@ -376,7 +414,7 @@ $('#btnEdit').onclick=()=>{const r=records.find(x=>x.id===detailId);if(r)swapLay
 $('#btnDel').onclick=()=>confirmDelete(detailId);
 $('#btnMore').onclick=()=>actionSheet('이 기록을',[{label:'수정',fn:()=>{const r=records.find(x=>x.id===detailId);if(r)swapLayer('L-form',()=>fillForm(r))}},{label:'삭제',danger:true,fn:()=>confirmDelete(detailId)}]);
 function actionSheet(title,items){openLayer('L-as',()=>{$('#asGrp').innerHTML=(title?`<p>${esc(title)}</p>`:'')+items.map((it,i)=>`<button data-i="${i}" class="${it.danger?'d':''}">${esc(it.label)}</button>`).join('');$('#asGrp').querySelectorAll('button').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.i];uiBack();setTimeout(()=>it.fn(),30)})})}
-function confirmDelete(id){actionSheet('삭제하면 되돌릴 수 없습니다',[{label:'기록 삭제',danger:true,fn:async()=>{const r=records.find(x=>x.id===id);if(!r)return;for(const p of photosOf(r)){dropCache(p);try{await idbDel(p)}catch{}}r.deleted=true;r.updated=Date.now();r.photos=[];persist();if(uiStack.some(x=>x.tag==='L-detail'))uiBack();render();toast('삭제했습니다')}}])}
+function confirmDelete(id){actionSheet('삭제하면 되돌릴 수 없습니다',[{label:'기록 삭제',danger:true,fn:async()=>{const r=records.find(x=>x.id===id);if(!r)return;for(const p of photosOf(r)){dropCache(p);try{await idbDel(p)}catch{}deleteRemoteMedia(p)}r.deleted=true;r.updated=Date.now();r.photos=[];persist();pushRecord(r);if(uiStack.some(x=>x.tag==='L-detail'))uiBack();render();toast('삭제했습니다')}}])}
 
 /* ========== 폼 ========== */
 let editId=null, formType='duty';
@@ -440,6 +478,7 @@ $('#btnSave').onclick=async()=>{
     r.photos=newIds;r.updated=Date.now();delete r.deleted;
     if(!editId)records.push(r);
     persist();
+    pushRecord(r);for(const id of newIds)if(!oldIds.includes(id))uploadMedia(id);
     const wasEdit=!!editId;
     if(formType!==tab)setTab(formType);else render();
     uiBack();
@@ -485,7 +524,7 @@ $('#vDl').onclick=async()=>{const it=vw.items[vw.i];let blob=it.blob;if(!blob&&i
 })();
 
 /* ========== 설정 · 백업 ========== */
-$('#btnSettings').onclick=()=>openLayer('L-settings',()=>{const l=live();$('#about').innerHTML=`기록 장부 v1 · 면세 ${l.filter(r=>r.type==='duty').length}건 · 영수증 ${l.filter(r=>r.type==='receipt').length}건<br>데이터는 이 기기의 브라우저 안에만 저장됩니다. 브라우저 데이터를 지우면 사라지므로 주기적으로 백업해 두세요.<br>홈 화면에 추가하면 앱처럼 쓸 수 있고, 오프라인에서도 동작합니다.`});
+$('#btnSettings').onclick=()=>openLayer('L-settings',()=>{$('#syncCode').value=syncCode;renderSyncStatus();$('#diagOut').classList.add('hidden');const l=live();$('#about').innerHTML=`기록 장부 v1 · 면세 ${l.filter(r=>r.type==='duty').length}건 · 영수증 ${l.filter(r=>r.type==='receipt').length}건<br>데이터는 이 기기의 브라우저 안에만 저장됩니다. 브라우저 데이터를 지우면 사라지므로 주기적으로 백업해 두세요.<br>홈 화면에 추가하면 앱처럼 쓸 수 있고, 오프라인에서도 동작합니다.`});
 function download(name,text){const b=new Blob([text],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
 $('#btnExport').onclick=()=>{download(`기록장부_백업_${today()}.json`,JSON.stringify({app:'ledger',version:1,exported:Date.now(),records},null,1));toast('백업 파일을 내려받습니다')};
 const b64=blob=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)});
@@ -494,10 +533,107 @@ $('#btnImport').onclick=()=>{$('#importFile').value='';$('#importFile').click()}
 $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!d||d.app!=='ledger'||!Array.isArray(d.records))throw new Error('이 앱의 백업 파일이 아닙니다');
   let n=0;for(const r of d.records){if(!r?.id)continue;const cur=records.find(x=>x.id===r.id);if(!cur){records.push(r);n++}else if((r.updated||0)>(cur.updated||0)){Object.assign(cur,r);n++}}
   let m=0;if(Array.isArray(d.media)){for(const it of d.media){if(!it?.id||!it.blob)continue;const blob=await (await fetch(it.blob)).blob();const thumb=it.thumb?await (await fetch(it.thumb)).blob():null;await idbPut({id:it.id,blob,thumb});dropCache(it.id);m++}}
-  persist();render();toast(`가져오기 완료: 기록 ${n}건${m?`, 사진 ${m}장`:''} 반영`,2500)}catch(err){toast('가져오기 실패: '+err.message,3000)}});
+  persist();render();toast(`가져오기 완료: 기록 ${n}건${m?`, 사진 ${m}장`:''} 반영`,2500);fullReconcile()}catch(err){toast('가져오기 실패: '+err.message,3000)}});
+
+/* ========== Firebase 동기화 (연결 코드 방식) ========== */
+// 사진도 Firestore 문서의 바이트 필드로 저장 → Storage(유료 요금제 필요)·CORS 설정 없이 동작
+const FB_CONFIG={apiKey:"AIzaSyCi79rVhip3GqsKazCTEoqYyyxwA5KwXT4",authDomain:"receits-4e19e.firebaseapp.com",projectId:"receits-4e19e",storageBucket:"receits-4e19e.firebasestorage.app",messagingSenderId:"539797144373",appId:"1:539797144373:web:548f3c8d942493e949827c"};
+const FB_VER='10.14.1', LS_CODE='ledger.syncCode';
+const MAX_SYNC_BYTES=950*1024; // Firestore 문서 1MiB 제한
+let fb=null, fbUnsub=null, syncCode=localStorage.getItem(LS_CODE)||'', syncState={status:'off',msg:''};
+let mediaSynced=new Set();
+function loadSynced(){try{mediaSynced=new Set(JSON.parse(localStorage.getItem('ledger.mediaSynced:'+syncCode)||'[]'))}catch{mediaSynced=new Set()}}
+function markSynced(id){mediaSynced.add(id);try{localStorage.setItem('ledger.mediaSynced:'+syncCode,JSON.stringify([...mediaSynced]))}catch{}}
+const syncOn=()=>!!(fb&&syncCode&&syncState.status==='on');
+function setSync(status,msg){syncState={status,msg};renderSyncStatus()}
+function renderSyncStatus(){const d=$('#syncDot'),t=$('#syncText');if(!d)return;d.className='dot '+({on:'on',error:'err',loading:'load',off:''}[syncState.status]||'');t.textContent=syncState.status==='off'?'연결 안 됨 · 이 기기에만 저장':syncState.msg+(syncCode?` · 코드 ${syncCode.slice(0,3)}…${syncCode.slice(-2)}`:'')}
+function errMsg(e){const c=e?.code||'';const m={'permission-denied':'권한 거부 — Firestore 규칙을 확인하세요','unavailable':'서버에 연결할 수 없음 — 인터넷을 확인하세요','not-found':'Firestore 데이터베이스가 아직 없습니다 — 콘솔에서 만들어 주세요','failed-precondition':'Firestore가 준비되지 않았습니다 — 콘솔에서 데이터베이스를 만들어 주세요','resource-exhausted':'무료 사용량 초과 — 내일 다시 시도','invalid-argument':'문서가 너무 큽니다'}[c];return (m||e?.message||String(e))+(c?` (${c})`:'')}
+async function loadFirebase(){if(fb)return fb;const base=`https://www.gstatic.com/firebasejs/${FB_VER}/`;const [app,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-firestore.js')]);const a=app.getApps().length?app.getApp():app.initializeApp(FB_CONFIG);fb={fs,db:fs.getFirestore(a)};return fb}
+const colRecords=()=>fb.fs.collection(fb.db,'spaces',syncCode,'records');
+const docRecord=id=>fb.fs.doc(fb.db,'spaces',syncCode,'records',id);
+const docMedia=id=>fb.fs.doc(fb.db,'spaces',syncCode,'media',id);
+const docBlob=id=>fb.fs.doc(fb.db,'spaces',syncCode,'blobs',id);
+const clean=o=>JSON.parse(JSON.stringify(o));
+let syncErrT=0;function syncNote(msg){const now=Date.now();if(now-syncErrT<4000)return;syncErrT=now;toast(msg,3500)}
+
+async function connectSync(code){
+  code=(code||'').trim();
+  if(code.length<10){toast('연결 코드는 10자 이상이어야 합니다');return false}
+  disconnectSync(true);
+  syncCode=code;localStorage.setItem(LS_CODE,code);loadSynced();
+  setSync('loading','연결 중…');
+  try{await loadFirebase()}catch(e){console.warn(e);setSync('error','동기화 모듈을 불러오지 못했습니다 (인터넷 확인)');toast('동기화 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요',3000);return false}
+  let first=true;
+  fbUnsub=fb.fs.onSnapshot(colRecords(),{includeMetadataChanges:false},snap=>{
+    let changed=false;
+    for(const ch of snap.docChanges()){if(ch.type==='removed')continue;if(applyRemote(ch.doc.data()))changed=true}
+    if(first){first=false;setSync('on','연결됨 · 실시간 동기화 중');const remote=new Map();snap.forEach(d=>remote.set(d.id,d.data()));pushLocalNewer(remote);pushMissingMedia()}
+    if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}
+  },err=>{console.warn(err);setSync('error',errMsg(err));toast('동기화 오류: '+errMsg(err),4000)});
+  return true;
+}
+function disconnectSync(silent){if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}if(!silent){syncCode='';localStorage.removeItem(LS_CODE);mediaSynced=new Set();setSync('off','')}}
+function applyRemote(rem){
+  if(!rem||!rem.id)return false;
+  const i=records.findIndex(x=>x.id===rem.id);const local=i>=0?records[i]:null;
+  if(!local){records.push(clean(rem));return true}
+  if((rem.updated||0)>(local.updated||0)){
+    const oldPh=photosOf(local);records[i]=clean(rem);
+    if(rem.deleted){for(const p of oldPh){dropCache(p);idbDel(p).catch(()=>{})}}
+    return true}
+  if((local.updated||0)>(rem.updated||0))pushRecord(local);
+  return false;
+}
+function pushRecord(r){if(!syncOn())return;fb.fs.setDoc(docRecord(r.id),clean(r)).catch(e=>{console.warn(e);syncNote('클라우드 저장 실패: '+errMsg(e))})}
+function pushLocalNewer(remote){for(const r of records){const rem=remote.get(r.id);if(!rem||(r.updated||0)>(rem.updated||0))pushRecord(r)}}
+async function pushMissingMedia(){if(!syncOn())return;const ids=[...new Set(live().flatMap(photosOf))].filter(id=>!mediaSynced.has(id));for(const id of ids){if(!syncOn())return;try{const s=await fb.fs.getDoc(docMedia(id));if(s.exists()){markSynced(id);continue}}catch(e){console.warn(e);return}await uploadMedia(id)}}
+const toBytes=async blob=>fb.fs.Bytes.fromUint8Array(new Uint8Array(await blob.arrayBuffer()));
+const bytesToBlob=(b,type)=>new Blob([b.toUint8Array()],{type:type||'image/jpeg'});
+async function uploadMedia(id){
+  if(!syncOn())return;let rec=null;try{rec=await idbGet(id)}catch{}if(!rec?.blob)return;
+  if(rec.blob.size>MAX_SYNC_BYTES){syncNote('사진이 너무 커서 이 기기에만 저장됩니다');return}
+  try{
+    const now=Date.now();
+    await fb.fs.setDoc(docMedia(id),{t:await toBytes(rec.thumb||rec.blob),type:rec.blob.type||'image/jpeg',size:rec.blob.size,updated:now});
+    await fb.fs.setDoc(docBlob(id),{d:await toBytes(rec.blob),type:rec.blob.type||'image/jpeg',updated:now});
+    markSynced(id);
+  }catch(e){console.warn(e);syncNote('사진 업로드 실패: '+errMsg(e))}
+}
+function deleteRemoteMedia(id){if(!syncOn())return;fb.fs.deleteDoc(docMedia(id)).catch(()=>{});fb.fs.deleteDoc(docBlob(id)).catch(()=>{})}
+const pulling=new Map();
+function pullMedia(id,kind,rec){const k=id+':'+kind;if(pulling.has(k))return pulling.get(k);const p=(async()=>{try{
+    if(kind==='t'){const s=await fb.fs.getDoc(docMedia(id));if(!s.exists())return null;const d=s.data();const thumb=bytesToBlob(d.t,'image/jpeg');await idbPut({...(rec||{}),id,thumb});markSynced(id);return thumb}
+    const s=await fb.fs.getDoc(docBlob(id));if(!s.exists())return null;const d=s.data();const blob=bytesToBlob(d.d,d.type);await idbPut({...(rec||{}),id,blob});markSynced(id);return blob;
+  }catch(e){console.warn(e);syncNote('사진 내려받기 실패: '+errMsg(e));return null}finally{pulling.delete(k)}})();pulling.set(k,p);return p}
+function reloadVisibleMedia(){document.querySelectorAll('img[data-mid]:not([src])').forEach(lazy)}
+function refreshOpenDetail(){if(!uiStack.some(x=>x.tag==='L-detail'))return;const r=records.find(x=>x.id===detailId);if(r&&!r.deleted)renderDetail(r);else{uiBack();toast('다른 기기에서 삭제된 기록입니다')}}
+async function fullReconcile(){if(!syncOn())return;try{const snap=await fb.fs.getDocs(colRecords());const remote=new Map();let changed=false;snap.forEach(d=>{remote.set(d.id,d.data());if(applyRemote(d.data()))changed=true});pushLocalNewer(remote);await pushMissingMedia();if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}}catch(e){console.warn(e);syncNote('동기화 확인 실패: '+errMsg(e))}}
+window.addEventListener('online',()=>{if(!syncCode)return;if(syncState.status==='on')fullReconcile();else connectSync(syncCode)});
+
+async function syncDiag(){
+  const out=$('#diagOut');out.classList.remove('hidden');const L=[];const say=t=>{L.push(t);out.textContent=L.join('\n')};
+  const code=($('#syncCode').value||syncCode||'').trim();
+  say(`시각: ${new Date().toLocaleString('ko-KR')}`);say(`온라인: ${navigator.onLine?'예':'아니오'} · 주소: ${location.host||'(로컬)'}`);
+  say(`코드: ${code?code.length+'자':'없음'} ${code.length>=10?'✅':'❌ 10자 이상 필요'}`);
+  if(code.length<10)return;
+  let t=Date.now();
+  try{await loadFirebase();say(`Firebase SDK 로드 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Firebase SDK 로드 ❌ ${e.message}`);return}
+  const ref=fb.fs.doc(fb.db,'spaces',code,'diag','ping');
+  t=Date.now();try{await fb.fs.setDoc(ref,{t:Date.now()});say(`Firestore 쓰기 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Firestore 쓰기 ❌ ${errMsg(e)}`);return}
+  t=Date.now();try{const s=await fb.fs.getDoc(ref);say(`Firestore 읽기 ${s.exists()?'✅':'❌ 문서 없음'} (${Date.now()-t}ms)`)}catch(e){say(`Firestore 읽기 ❌ ${errMsg(e)}`)}
+  try{await fb.fs.deleteDoc(ref)}catch{}
+  try{const snap=await fb.fs.getDocs(fb.fs.collection(fb.db,'spaces',code,'records'));let n=0,d=0;snap.forEach(x=>{n++;if(x.data().deleted)d++});say(`클라우드 기록: ${n}건 (삭제 표시 ${d}건)`)}catch(e){say(`기록 조회 ❌ ${errMsg(e)}`)}
+  say(`이 기기 기록: ${live().length}건 · 사진 ${live().flatMap(photosOf).length}장 (클라우드 반영 ${[...new Set(live().flatMap(photosOf))].filter(id=>mediaSynced.has(id)).length}장)`);
+  say(`상태: ${syncState.status} ${syncState.msg}`);
+}
+$('#btnCodeGen').onclick=()=>{const A='abcdefghjkmnpqrstuvwxyz23456789';const a=new Uint8Array(14);crypto.getRandomValues(a);$('#syncCode').value=[...a].map(x=>A[x%A.length]).join('');toast('새 코드를 만들었습니다. 연결을 누르세요')};
+$('#btnSyncConnect').onclick=async()=>{const b=$('#btnSyncConnect');b.disabled=true;try{if(await connectSync($('#syncCode').value))toast('연결 중… 잠시 후 상태를 확인하세요')}finally{b.disabled=false}};
+$('#btnSyncOff').onclick=()=>{if(!syncCode){toast('연결된 코드가 없습니다');return}actionSheet('연결을 해제해도 이 기기의 기록은 남습니다',[{label:'연결 해제',danger:true,fn:()=>{disconnectSync(false);$('#syncCode').value='';toast('연결을 해제했습니다')}}])};
+$('#btnSyncDiag').onclick=()=>syncDiag().catch(e=>toast('점검 실패: '+e.message));
 
 /* ========== 시작 ========== */
 setTab(tab);
+if(syncCode)setTimeout(()=>connectSync(syncCode),300);
 if('serviceWorker' in navigator&&location.protocol.startsWith('http')){
   if(navigator.serviceWorker.controller){let reloaded=false;navigator.serviceWorker.addEventListener('controllerchange',()=>{if(reloaded)return;reloaded=true;location.reload()})}
   window.addEventListener('load',()=>navigator.serviceWorker.register('./sw.js').then(r=>r.update()).catch(()=>{}));

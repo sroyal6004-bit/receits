@@ -23,11 +23,37 @@
 2. 브라우저 메뉴에서 **홈 화면에 추가**(iOS Safari: 공유 → 홈 화면에 추가)를 누르면 앱처럼 실행됩니다.
 3. 데이터는 그 기기의 브라우저 안에만 저장됩니다. 브라우저 데이터를 지우면 사라지므로 ⚙ 설정에서 주기적으로 백업하세요.
 
-## 배포 (GitHub Pages)
+## 기기 간 동기화 (Firebase, 선택)
 
-1. GitHub 저장소 → **Settings** → **Pages**
-2. **Source**를 `Deploy from a branch`, 브랜치를 배포할 브랜치(예: `main`), 폴더를 `/ (root)`로 선택 → **Save**
-3. 잠시 후 표시되는 주소(`https://<계정>.github.io/<저장소>/`)를 폰에서 엽니다.
+⚙ 설정 → **기기 간 동기화**에서 **새 코드 → 연결**. 다른 기기에 같은 코드를 넣으면 기록과 사진이 실시간으로 합쳐집니다.
+코드가 곧 비밀번호이므로 남에게 알려주지 말고, 잃어버리지 않게 메모해 두세요.
+
+처음 한 번 Firebase 콘솔 설정이 필요합니다(앱의 설정 화면 안에 클릭 순서와 규칙 본문이 있습니다):
+
+1. Firebase 콘솔 → 프로젝트 → **빌드 → Firestore Database → 데이터베이스 만들기** (위치 `asia-northeast3`, 프로덕션 모드)
+2. **규칙** 탭에 아래를 붙여넣고 **게시**
+
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /spaces/{code}/{document=**} {
+      allow read, write: if code.size() >= 10;
+    }
+  }
+}
+```
+
+사진은 Firestore 문서(바이트 필드)에 저장하므로 Storage나 유료 요금제가 필요 없습니다.
+잘 안 되면 설정의 **동기화 상태 점검** 버튼이 원인을 화면에 출력합니다.
+
+## 배포 (GitHub Pages 자동)
+
+`.github/workflows/pages.yml`이 기본 브랜치에 푸시할 때마다 GitHub Pages에 자동 배포합니다.
+배포 시 서비스워커 캐시 이름을 커밋 해시로 바꾸므로, 이미 설치한 앱도 다음 실행 때 새 버전으로 자동 새로고침됩니다.
+
+- 주소: `https://sroyal6004-bit.github.io/receits/`
+- 첫 배포가 실패하면 저장소 **Settings → Pages → Source**를 **GitHub Actions**로 바꾼 뒤 Actions 탭에서 다시 실행하세요.
 
 로컬에서 확인하려면 폴더에서 `python3 -m http.server 8000` 실행 후 `http://localhost:8000` 접속
 (`file://`로 직접 열면 뒤로가기·서비스워커가 동작하지 않습니다).
