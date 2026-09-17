@@ -105,7 +105,11 @@ main{padding:12px 12px 0}
 @media(min-width:560px){.split.two .pslot{aspect-ratio:16/9}}
 .pslot.filled{border-style:solid;border-color:var(--card2)}
 .pslot img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-.pslot .plus{font-size:26px;line-height:1;color:var(--fg2)}
+.pslot .pick{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px;min-width:72px;min-height:56px;padding:6px 12px;border-radius:12px;background:var(--card);border:1px solid var(--line);color:var(--fg2);font-size:13px;font-weight:600}
+.pslot .pick .plus{font-size:24px;line-height:1;color:var(--fg)}
+.pslot .pick:active{background:var(--card2)}
+.pslot.sel{border-color:var(--acc);box-shadow:0 0 0 2px rgba(56,189,248,.25)}
+.pslot .ph{position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:var(--fg3);font-weight:400}
 .pslot .no{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 7px;border-radius:999px}
 .pslot .rm{position:absolute;right:4px;top:4px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center}
 .hint{font-size:12px;color:var(--fg3);margin-top:6px;line-height:1.5}
@@ -188,9 +192,9 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
 
 <!-- 입력/수정 폼 -->
 <div class="layer" id="L-form">
-  <div class="bd" data-back></div>
+  <div class="bd"></div>
   <div class="sheet" role="dialog" aria-modal="true">
-    <div class="sh"><span class="grab"></span><button class="iconbtn" data-back aria-label="닫기">✕</button><h2 id="formTitle">새 기록</h2><span style="width:44px"></span></div>
+    <div class="sh"><span class="grab"></span><button class="iconbtn" data-formclose aria-label="닫기">✕</button><h2 id="formTitle">새 기록</h2><span style="width:44px"></span></div>
     <div class="sc">
       <form id="form" autocomplete="off" onsubmit="return false">
         <!-- 면세 -->
@@ -216,12 +220,12 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
           <div class="fld"><label class="lbl" for="fMemo">메모 <span style="font-weight:400;color:var(--fg3)">(선택)</span></label><textarea id="fMemo" rows="3" placeholder="품목, 금액 등 메모"></textarea></div>
           <div class="fld"><label class="lbl">사진</label><div class="pslots" id="slots2"></div></div>
         </div>
-        <p class="hint">사진은 최대 3장. 빈 칸을 누르면 사진을 고르거나 촬영할 수 있고, 데스크탑에서는 붙여넣기(Ctrl+V)도 됩니다.</p>
+        <p class="hint">사진은 최대 3장. 칸 가운데 <b>＋</b>를 누르면 사진을 고르거나 촬영할 수 있고, 데스크탑에서는 칸을 선택한 뒤 붙여넣기(Ctrl+V)도 됩니다. 창 바깥을 눌러도 닫히지 않으며, 실수로 닫혀도 작성 중이던 내용은 다시 열 때 복원됩니다.</p>
       </form>
       <input type="file" id="file" accept="image/*" multiple class="hidden">
     </div>
     <div class="sf">
-      <button class="btn sec" data-back>취소</button>
+      <button class="btn sec" data-formclose>취소</button>
       <button class="btn pri" id="btnSave">저장</button>
     </div>
   </div>
@@ -361,7 +365,8 @@ function uiBack(){const t=uiStack[uiStack.length-1];if(!t)return;if(t.pushed)his
 window.addEventListener('popstate',()=>{if(!uiStack.length)return;hideLayer(uiStack.pop().tag)});
 document.addEventListener('click',e=>{const b=e.target.closest('[data-back]');if(b){e.preventDefault();uiBack()}});
 function onLayerHidden(tag){if(tag==='viewer')viewerClosed();if(tag==='L-form')formClosed()}
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&uiStack.length){const t=uiStack[uiStack.length-1].tag;if(t==='viewer'&&vw.scale>1){vw.reset();return}uiBack()}});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&uiStack.length){const t=uiStack[uiStack.length-1].tag;if(t==='viewer'&&vw.scale>1){vw.reset();return}if(t==='L-form'){requestFormClose();return}uiBack()}});
+document.addEventListener('click',e=>{if(e.target.closest('[data-formclose]')){e.preventDefault();requestFormClose()}});
 
 /* ========== 상태 / 목록 ========== */
 let tab=localStorage.getItem(LS_TAB)==='receipt'?'receipt':'duty';
@@ -419,9 +424,28 @@ function confirmDelete(id){actionSheet('삭제하면 되돌릴 수 없습니다'
 /* ========== 폼 ========== */
 let editId=null, formType='duty';
 let slots=[null,null,null]; // {id?, blob?, thumb?, url}
-let pickSlot=-1;
+let pickSlot=-1, formInitial='', formCloseMode=null, draft=null;
+const LS_DRAFT='ledger.draft';
+function formFields(){return formType==='duty'?{name:$('#fName').value,customerNo:$('#fCust').value,date:$('#fDate1').value,content:$('#fContent').value}:{vendor:$('#fVendor').value,vendorEtc:$('#fVendorEtc').value,date:$('#fDate2').value,memo:$('#fMemo').value}}
+function formSig(){return JSON.stringify([formFields(),slots.map(s=>s?(s.id||'new'):null)])}
+const formDirty=()=>formSig()!==formInitial;
+function saveDraftText(){try{if(formDirty())localStorage.setItem(LS_DRAFT,JSON.stringify({editId,formType,f:formFields(),t:Date.now()}));else localStorage.removeItem(LS_DRAFT)}catch{}}
+let draftT;$('#form').addEventListener('input',()=>{clearTimeout(draftT);draftT=setTimeout(saveDraftText,300)});
+function clearDraft(){draft=null;try{localStorage.removeItem(LS_DRAFT)}catch{}}
 function fillForm(r){
   editId=r?r.id:null;formType=r?r.type:tab;
+  const key=(editId||'new')+':'+formType;
+  let d=draft&&draft.key===key?draft:null;
+  if(!d){try{const j=JSON.parse(localStorage.getItem(LS_DRAFT)||'null');if(j&&(j.editId||'new')+':'+j.formType===key)d={key,f:j.f,slots:null}}catch{}}
+  fillFormBase(r);
+  formInitial=formSig();
+  if(d){const f=d.f||{};
+    if(formType==='duty'){$('#fName').value=f.name??'';$('#fCust').value=f.customerNo??'';$('#fDate1').value=f.date||today();$('#fContent').value=f.content??''}
+    else{$('#fVendor').value=VENDORS.includes(f.vendor)?f.vendor:'쿠팡';$('#fVendorEtc').value=f.vendorEtc??'';$('#fDate2').value=f.date||today();$('#fMemo').value=f.memo??'';vendorEtcToggle()}
+    if(d.slots){slots=d.slots;renderSlots()}
+    draft=null;toast('작성 중이던 내용을 복원했습니다',2200)}
+}
+function fillFormBase(r){
   $('#formTitle').textContent=(r?'기록 수정 · ':'새 기록 · ')+TABS[formType].name;
   $('#btnSave').textContent=r?'수정 저장':'저장';
   $('#fDuty').classList.toggle('hidden',formType!=='duty');$('#fReceipt').classList.toggle('hidden',formType!=='receipt');
@@ -429,17 +453,24 @@ function fillForm(r){
   $('#fVendor').value=r&&VENDORS.includes(r.vendor)?r.vendor:'쿠팡';$('#fVendorEtc').value=r?.vendorEtc||'';$('#fDate2').value=r?.date||today();$('#fMemo').value=r?.memo||'';
   vendorEtcToggle();
   slots=[null,null,null];photosOf(r||{}).slice(0,3).forEach((id,i)=>slots[i]={id});
-  renderSlots();
+  pickSlot=-1;renderSlots();
   $('#L-form .sc').scrollTop=0;
+}
+function requestFormClose(){
+  if(!formDirty()){formCloseMode='discard';uiBack();return}
+  actionSheet('작성 중인 내용이 있습니다. 닫으면 사라집니다.',[{label:'버리고 닫기',danger:true,fn:()=>{formCloseMode='discard';uiBack()}},{label:'임시 저장하고 닫기',fn:()=>{formCloseMode=null;uiBack()}}]);
 }
 function vendorEtcToggle(){$('#fVendorEtcWrap').classList.toggle('hidden',$('#fVendor').value!=='기타')}
 $('#fVendor').onchange=vendorEtcToggle;
 function slotsEl(){return formType==='duty'?$('#slots1'):$('#slots2')}
 function renderSlots(){
   const el=slotsEl();
-  el.innerHTML=slots.map((s,i)=>`<div class="pslot${s?' filled':''}" data-i="${i}" role="button" tabindex="0">${s?`<img alt="사진 ${i+1}"${s.url?` src="${s.url}"`:` data-mid="${s.id}" data-kind="t"`}><span class="no">사진 ${i+1}</span><button class="rm" data-rm="${i}" aria-label="사진 ${i+1} 삭제">✕</button>`:`<span class="plus">＋</span><span>사진 ${i+1}</span>`}</div>`).join('');
+  el.innerHTML=slots.map((s,i)=>`<div class="pslot${s?' filled':''}${!s&&pickSlot===i?' sel':''}" data-i="${i}" tabindex="0">${s?`<img alt="사진 ${i+1}"${s.url?` src="${s.url}"`:` data-mid="${s.id}" data-kind="t"`}><span class="no">사진 ${i+1}</span><button class="rm" data-rm="${i}" aria-label="사진 ${i+1} 삭제">✕</button>`:`<button type="button" class="pick" data-pick="${i}"><span class="plus">＋</span><span>사진 ${i+1}</span></button><span class="ph">${pickSlot===i?'여기에 붙여넣기 (Ctrl+V)':''}</span>`}</div>`).join('');
   el.querySelectorAll('img[data-mid]').forEach(lazy);
-  el.querySelectorAll('.pslot').forEach(p=>{p.onclick=e=>{if(e.target.closest('[data-rm]'))return;const i=+p.dataset.i;if(slots[i]){const list=slots.filter(Boolean);openViewer(list,list.indexOf(slots[i]),'첨부 사진')}else{pickSlot=i;$('#file').value='';$('#file').click()}};p.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();p.click()}}});
+  // ＋ 버튼만 파일 창을 연다
+  el.querySelectorAll('[data-pick]').forEach(b=>b.onclick=e=>{e.stopPropagation();pickSlot=+b.dataset.pick;$('#file').value='';$('#file').click()});
+  // 칸의 나머지 영역: 채워진 칸은 확대 보기, 빈 칸은 붙여넣기 대상으로 선택만
+  el.querySelectorAll('.pslot').forEach(p=>{p.onclick=e=>{if(e.target.closest('[data-rm],[data-pick]'))return;const i=+p.dataset.i;if(slots[i]){const list=slots.filter(Boolean);openViewer(list,list.indexOf(slots[i]),'첨부 사진')}else{pickSlot=pickSlot===i?-1:i;renderSlots();el.querySelector(`.pslot[data-i="${i}"]`)?.focus()}};p.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const i=+p.dataset.i;if(slots[i])p.click();else{pickSlot=i;$('#file').value='';$('#file').click()}}}});
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=e=>{e.stopPropagation();const i=+b.dataset.rm;const s=slots[i];if(s?.url&&!s.id)URL.revokeObjectURL(s.url);slots[i]=null;renderSlots()});
 }
 $('#file').addEventListener('change',e=>{const files=[...e.target.files];e.target.value='';addFiles(files)});
@@ -449,13 +480,18 @@ async function addFiles(files){
   for(const f of files){
     let i=pickSlot>=0&&!slots[pickSlot]?pickSlot:slots.findIndex(s=>!s);pickSlot=-1;
     if(i<0){toast('사진은 최대 3장까지 첨부할 수 있습니다');break}
-    try{const {blob,thumb}=await compressImage(f);slots[i]={blob,thumb,url:URL.createObjectURL(thumb)};added++;renderSlots()}
+    try{const {blob,thumb}=await compressImage(f);slots[i]={blob,thumb,url:URL.createObjectURL(thumb)};added++;renderSlots();saveDraftText()}
     catch(err){toast('사진을 불러오지 못했습니다: '+(err.message||''))}
   }
   if(added)toast(`사진 ${added}장 추가`);
 }
 window.addEventListener('paste',e=>{if(!uiStack.length||uiStack[uiStack.length-1].tag!=='L-form')return;const items=[...(e.clipboardData?.items||[])].filter(it=>it.kind==='file'&&it.type.startsWith('image/')).map(it=>it.getAsFile()).filter(Boolean);if(items.length){e.preventDefault();addFiles(items)}});
-function formClosed(){slots.forEach(s=>{if(s?.url&&!s.id)URL.revokeObjectURL(s.url)});slots=[null,null,null];editId=null}
+function formClosed(){
+  const mode=formCloseMode;formCloseMode=null;
+  if(mode!=='saved'&&mode!=='discard'&&formDirty()){ // 뒤로가기 등으로 닫힘 → 임시 저장
+    draft={key:(editId||'new')+':'+formType,f:formFields(),slots:slots.slice()};saveDraftText();toast('작성 중이던 내용을 임시 저장했습니다. 다시 열면 복원됩니다',2600);
+    slots=[null,null,null];editId=null;return}
+  clearDraft();slots.forEach(s=>{if(s?.url&&!s.id)URL.revokeObjectURL(s.url)});slots=[null,null,null];editId=null}
 $('#fab').onclick=()=>openLayer('L-form',()=>fillForm(null));
 $('#btnSave').onclick=async()=>{
   const btn=$('#btnSave');btn.disabled=true;
@@ -481,7 +517,7 @@ $('#btnSave').onclick=async()=>{
     pushRecord(r);for(const id of newIds)if(!oldIds.includes(id))uploadMedia(id);
     const wasEdit=!!editId;
     if(formType!==tab)setTab(formType);else render();
-    uiBack();
+    formCloseMode='saved';uiBack();
     toast(wasEdit?'수정했습니다':'저장했습니다');
     if(wasEdit&&uiStack.some(x=>x.tag==='L-detail'))renderDetail(r);
   }catch(err){console.error(err);toast('저장 중 오류: '+(err.message||err))}
