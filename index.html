@@ -616,8 +616,19 @@ function markSynced(id){mediaSynced.add(id);try{localStorage.setItem('ledger.med
 const syncOn=()=>!!(fb&&syncCode&&syncState.status==='on');
 function setSync(status,msg){syncState={status,msg};renderSyncStatus()}
 function renderSyncStatus(){const d=$('#syncDot'),t=$('#syncText');if(!d)return;d.className='dot '+({on:'on',error:'err',loading:'load',off:''}[syncState.status]||'');t.textContent=syncState.status==='off'?'연결 안 됨 · 이 기기에만 저장':syncState.msg+(syncCode?` · 코드 ${syncCode.slice(0,3)}…${syncCode.slice(-2)}`:'')}
-function errMsg(e){const c=e?.code||'';const m={'permission-denied':'권한 거부 — Firestore 규칙을 확인하세요','unavailable':'서버에 연결할 수 없음 — 인터넷을 확인하세요','not-found':'Firestore 데이터베이스가 아직 없습니다 — 콘솔에서 만들어 주세요','failed-precondition':'Firestore가 준비되지 않았습니다 — 콘솔에서 데이터베이스를 만들어 주세요','resource-exhausted':'무료 사용량 초과 — 내일 다시 시도','invalid-argument':'문서가 너무 큽니다'}[c];return (m||e?.message||String(e))+(c?` (${c})`:'')}
-async function loadFirebase(){if(fb)return fb;const base=`https://www.gstatic.com/firebasejs/${FB_VER}/`;const [app,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-firestore.js')]);const a=app.getApps().length?app.getApp():app.initializeApp(FB_CONFIG);fb={fs,db:fs.getFirestore(a)};return fb}
+function errMsg(e){const c=e?.code||'';const m={'permission-denied':'권한 거부 — Firestore 규칙을 확인하세요','unavailable':'서버에 연결할 수 없음 — 인터넷을 확인하세요','not-found':'Firestore 데이터베이스가 아직 없습니다 — 콘솔에서 만들어 주세요','failed-precondition':'Firestore가 준비되지 않았습니다 — 콘솔에서 데이터베이스를 만들어 주세요','resource-exhausted':'무료 사용량 초과 — 내일 다시 시도','invalid-argument':'문서가 너무 큽니다','timeout':'서버 응답 없음 — 통신망이 실시간 연결을 막거나 인터넷이 불안정합니다'}[c];return (m||e?.message||String(e))+(c?` (${c})`:'')}
+const LS_LP='ledger.forceLongPolling';
+let forceLP=localStorage.getItem(LS_LP)==='1', fbMods=null, fbAppN=0;
+async function loadFirebase(){
+  if(fb&&fb.lp===forceLP)return fb;
+  if(!fbMods){const base=`https://www.gstatic.com/firebasejs/${FB_VER}/`;const [app,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-firestore.js')]);fbMods={app,fs}}
+  const {app,fs}=fbMods;
+  if(fb){try{await fs.terminate(fb.db)}catch{}try{await app.deleteApp(fb.app)}catch{}}
+  const a=app.initializeApp(FB_CONFIG,'ledger'+(fbAppN++));
+  // 롱폴링: 실시간 채널(WebChannel 스트리밍)을 막는 통신망/VPN/차단앱 우회
+  const db=forceLP?fs.initializeFirestore(a,{experimentalForceLongPolling:true}):fs.initializeFirestore(a,{experimentalAutoDetectLongPolling:true});
+  fb={app:a,fs,db,lp:forceLP};return fb}
+const withTimeout=(p,ms,label)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(Object.assign(new Error(label||'응답 없음'),{code:'timeout'})),ms))]);
 const colRecords=()=>fb.fs.collection(fb.db,'spaces',syncCode,'records');
 const docRecord=id=>fb.fs.doc(fb.db,'spaces',syncCode,'records',id);
 const docMedia=id=>fb.fs.doc(fb.db,'spaces',syncCode,'media',id);
@@ -632,13 +643,28 @@ async function connectSync(code){
   syncCode=code;localStorage.setItem(LS_CODE,code);loadSynced();
   setSync('loading','연결 중…');
   try{await loadFirebase()}catch(e){console.warn(e);setSync('error','동기화 모듈을 불러오지 못했습니다 (인터넷 확인)');toast('동기화 모듈을 불러오지 못했습니다. 인터넷 연결을 확인하세요',3000);return false}
-  let first=true;
-  fbUnsub=fb.fs.onSnapshot(colRecords(),{includeMetadataChanges:false},snap=>{
+  let first=true;const myUnsub=fb.fs.onSnapshot(colRecords(),{includeMetadataChanges:false},snap=>{
     let changed=false;
     for(const ch of snap.docChanges()){if(ch.type==='removed')continue;if(applyRemote(ch.doc.data()))changed=true}
-    if(first){first=false;setSync('on','연결됨 · 실시간 동기화 중');const remote=new Map();snap.forEach(d=>remote.set(d.id,d.data()));pushLocalNewer(remote);pushMissingMedia()}
+    if(first){first=false;setSync('on','연결됨 · 실시간 동기화 중'+(forceLP?' (롱폴링)':''));const remote=new Map();snap.forEach(d=>remote.set(d.id,d.data()));pushLocalNewer(remote);pushMissingMedia()}
     if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}
   },err=>{console.warn(err);setSync('error',errMsg(err));toast('동기화 오류: '+errMsg(err),4000)});
+  fbUnsub=myUnsub;
+  // 감시: 12초 안에 첫 응답이 없으면 원인을 직접 조사
+  setTimeout(async()=>{
+    if(fbUnsub!==myUnsub||syncState.status!=='loading')return;
+    setSync('loading','응답이 늦어 원인 확인 중…');
+    try{await withTimeout(fb.fs.getDocs(colRecords()),8000);
+      // 단발 조회는 되는데 실시간 채널만 안 됨 → 롱폴링으로 재연결
+      if(fbUnsub!==myUnsub||syncState.status!=='loading')return;
+      if(!forceLP){forceLP=true;localStorage.setItem(LS_LP,'1');toast('실시간 연결이 막혀 롱폴링 방식으로 다시 연결합니다',3000);connectSync(syncCode)}
+      else setSync('error','조회는 되지만 실시간 연결이 안 됩니다 — 동기화 상태 점검을 눌러 결과를 알려 주세요');
+    }catch(e){
+      if(fbUnsub!==myUnsub||syncState.status!=='loading')return;
+      if(e.code==='timeout'&&!forceLP){forceLP=true;localStorage.setItem(LS_LP,'1');toast('서버 응답이 없어 롱폴링 방식으로 다시 연결합니다',3000);connectSync(syncCode);return}
+      setSync('error',errMsg(e));toast('동기화 오류: '+errMsg(e),4000);
+    }
+  },12000);
   return true;
 }
 function disconnectSync(silent){if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}if(!silent){syncCode='';localStorage.removeItem(LS_CODE);mediaSynced=new Set();setSync('off','')}}
@@ -686,17 +712,21 @@ async function syncDiag(){
   say(`코드: ${code?code.length+'자':'없음'} ${code.length>=10?'✅':'❌ 10자 이상 필요'}`);
   if(code.length<10)return;
   let t=Date.now();
-  try{await loadFirebase();say(`Firebase SDK 로드 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Firebase SDK 로드 ❌ ${e.message}`);return}
+  try{await withTimeout(fetch('https://firestore.googleapis.com/',{mode:'no-cors',cache:'no-store'}),8000);say(`Google 서버 접근 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Google 서버 접근 ❌ ${e.message} — 이 통신망/VPN/차단앱이 Firebase를 막고 있습니다`)}
+  t=Date.now();
+  try{await loadFirebase();say(`Firebase SDK 로드 ✅ (${Date.now()-t}ms) · 모드: ${forceLP?'롱폴링':'자동'}`)}catch(e){say(`Firebase SDK 로드 ❌ ${e.message}`);return}
   const ref=fb.fs.doc(fb.db,'spaces',code,'diag','ping');
-  t=Date.now();try{await fb.fs.setDoc(ref,{t:Date.now()});say(`Firestore 쓰기 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Firestore 쓰기 ❌ ${errMsg(e)}`);return}
-  t=Date.now();try{const s=await fb.fs.getDoc(ref);say(`Firestore 읽기 ${s.exists()?'✅':'❌ 문서 없음'} (${Date.now()-t}ms)`)}catch(e){say(`Firestore 읽기 ❌ ${errMsg(e)}`)}
+  t=Date.now();try{await withTimeout(fb.fs.setDoc(ref,{t:Date.now()}),10000);say(`Firestore 쓰기 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Firestore 쓰기 ❌ ${errMsg(e)}`);if(e.code==='timeout')say('→ 시간 초과: Firestore 데이터베이스가 없거나(콘솔에서 "데이터베이스 만들기"), 통신망이 막고 있습니다. Wi-Fi/모바일 데이터를 바꿔 다시 점검해 보세요');return}
+  t=Date.now();try{const s=await withTimeout(fb.fs.getDocFromServer(ref),10000);say(`Firestore 읽기 ${s.exists()?'✅':'❌ 문서 없음'} (${Date.now()-t}ms)`)}catch(e){say(`Firestore 읽기 ❌ ${errMsg(e)}`)}
   try{await fb.fs.deleteDoc(ref)}catch{}
-  try{const snap=await fb.fs.getDocs(fb.fs.collection(fb.db,'spaces',code,'records'));let n=0,d=0;snap.forEach(x=>{n++;if(x.data().deleted)d++});say(`클라우드 기록: ${n}건 (삭제 표시 ${d}건)`)}catch(e){say(`기록 조회 ❌ ${errMsg(e)}`)}
+  t=Date.now();try{const snap=await withTimeout(fb.fs.getDocs(fb.fs.collection(fb.db,'spaces',code,'records')),10000);let n=0,d=0;snap.forEach(x=>{n++;if(x.data().deleted)d++});say(`클라우드 기록: ${n}건 (삭제 표시 ${d}건) (${Date.now()-t}ms)`)}catch(e){say(`기록 조회 ❌ ${errMsg(e)}`)}
+  // 실시간 채널 점검
+  t=Date.now();try{await withTimeout(new Promise((res,rej)=>{const u=fb.fs.onSnapshot(fb.fs.collection(fb.db,'spaces',code,'records'),()=>{u();res()},err=>{u();rej(err)})}),10000);say(`실시간 채널 ✅ (${Date.now()-t}ms)`)}catch(e){say(`실시간 채널 ❌ ${errMsg(e)}`);if(e.code==='timeout'&&!forceLP){forceLP=true;localStorage.setItem(LS_LP,'1');say('→ 단발 조회는 되는데 실시간만 막힘: 다음 연결부터 롱폴링 모드로 자동 전환됩니다')}}
   say(`이 기기 기록: ${live().length}건 · 사진 ${live().flatMap(photosOf).length}장 (클라우드 반영 ${[...new Set(live().flatMap(photosOf))].filter(id=>mediaSynced.has(id)).length}장)`);
   say(`상태: ${syncState.status} ${syncState.msg}`);
 }
 $('#btnCodeGen').onclick=()=>{const A='abcdefghjkmnpqrstuvwxyz23456789';const a=new Uint8Array(14);crypto.getRandomValues(a);$('#syncCode').value=[...a].map(x=>A[x%A.length]).join('');toast('새 코드를 만들었습니다. 연결을 누르세요')};
-$('#btnSyncConnect').onclick=async()=>{const b=$('#btnSyncConnect');b.disabled=true;try{if(await connectSync($('#syncCode').value))toast('연결 중… 잠시 후 상태를 확인하세요')}finally{b.disabled=false}};
+$('#btnSyncConnect').onclick=async()=>{const b=$('#btnSyncConnect');b.disabled=true;try{if(await connectSync($('#syncCode').value))toast('연결 중… 최대 20초 정도 걸릴 수 있습니다')}finally{b.disabled=false}};
 $('#btnSyncOff').onclick=()=>{if(!syncCode){toast('연결된 코드가 없습니다');return}actionSheet('연결을 해제해도 이 기기의 기록은 남습니다',[{label:'연결 해제',danger:true,fn:()=>{disconnectSync(false);$('#syncCode').value='';toast('연결을 해제했습니다')}}])};
 $('#btnSyncDiag').onclick=()=>syncDiag().catch(e=>toast('점검 실패: '+e.message));
 
