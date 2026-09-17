@@ -63,7 +63,8 @@ main{padding:12px 12px 0}
 .list{display:flex;flex-direction:column;gap:8px}
 .item{display:flex;gap:12px;background:var(--card);border-radius:var(--r);padding:12px;text-align:left;width:100%;align-items:center}
 .item:active{background:var(--card2)}
-.thumb{width:62px;height:62px;border-radius:10px;background:var(--bg2);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--fg3);font-size:22px;position:relative}
+.thumbs{display:flex;gap:4px;flex:none}
+.thumb{width:56px;height:56px;border-radius:10px;background:var(--bg2);flex:none;overflow:hidden;display:flex;align-items:center;justify-content:center;color:var(--fg3);font-size:22px;position:relative}
 .thumb img{width:100%;height:100%;object-fit:cover;display:block}
 .thumb .cnt{position:absolute;right:3px;bottom:3px;background:rgba(0,0,0,.65);color:#fff;font-size:11px;padding:1px 6px;border-radius:999px;font-weight:700}
 .item .body{flex:1;min-width:0}
@@ -112,6 +113,11 @@ main{padding:12px 12px 0}
 .pslot .ph{position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:var(--fg3);font-weight:400}
 .pslot .no{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 7px;border-radius:999px}
 .pslot .rm{position:absolute;right:4px;top:4px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center}
+.pslot .mv{position:absolute;left:4px;bottom:4px;display:flex;gap:4px}
+.pslot .mv button{width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center}
+.pslot .mv button:disabled{opacity:.3}
+.pslot .mv .v{display:none}
+@media(min-width:560px){.split.two .pslot .mv .v{display:inline}.split.two .pslot .mv .h{display:none}}
 .hint{font-size:12px;color:var(--fg3);margin-top:6px;line-height:1.5}
 .dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px;font-size:15px}
 .dl dt{color:var(--fg2);font-size:13px;padding-top:2px;white-space:nowrap}
@@ -220,7 +226,7 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
           <div class="fld"><label class="lbl" for="fMemo">메모 <span style="font-weight:400;color:var(--fg3)">(선택)</span></label><textarea id="fMemo" rows="3" placeholder="품목, 금액 등 메모"></textarea></div>
           <div class="fld"><label class="lbl">사진</label><div class="pslots" id="slots2"></div></div>
         </div>
-        <p class="hint">사진은 최대 3장. 칸 가운데 <b>＋</b>를 누르면 사진을 고르거나 촬영할 수 있고, 데스크탑에서는 칸을 선택한 뒤 붙여넣기(Ctrl+V)도 됩니다. 창 바깥을 눌러도 닫히지 않으며, 실수로 닫혀도 작성 중이던 내용은 다시 열 때 복원됩니다.</p>
+        <p class="hint">사진은 최대 3장. 사진 아래 ◀▶ 버튼으로 순서를 바꿀 수 있습니다. 칸 가운데 <b>＋</b>를 누르면 사진을 고르거나 촬영할 수 있고, 데스크탑에서는 칸을 선택한 뒤 붙여넣기(Ctrl+V)도 됩니다. 창 바깥을 눌러도 닫히지 않으며, 실수로 닫혀도 작성 중이던 내용은 다시 열 때 복원됩니다.</p>
       </form>
       <input type="file" id="file" accept="image/*" multiple class="hidden">
     </div>
@@ -394,10 +400,11 @@ function render(){
   $('#stats').innerHTML=`<div class="stat"><b>${all.length}</b><span>전체 기록</span></div><div class="stat"><b>${month}</b><span>이번 달</span></div><div class="stat"><b>${photos}</b><span>사진</span></div>`;
   const rows=filtered(), list=$('#list');
   if(!rows.length){list.innerHTML=`<div class="empty"><b>${tab==='duty'?'🧾':'🛍️'}</b>${all.length?'검색 결과가 없습니다':`${TABS[tab].name}에 아직 기록이 없습니다.<br>오른쪽 아래 <strong>+</strong> 버튼으로 첫 기록을 추가해 보세요.`}</div>`;return}
-  list.innerHTML=rows.map(r=>{const ph=photosOf(r);const first=ph[0];
+  list.innerHTML=rows.map(r=>{const ph=photosOf(r);
     const sub=r.type==='duty'?fmtDate(r.date):`<span class="badge v-${esc(r.vendor||'기타')}">${esc(r.vendor||'기타')}</span>${fmtDate(r.date)}`;
     const memo=(r.type==='duty'?r.content:r.memo)||'';
-    return `<button class="item" data-id="${r.id}"><div class="thumb">${first?`<img alt="" data-mid="${first}" data-kind="t">`:(r.type==='duty'?'🧾':'🛍️')}${ph.length>1?`<span class="cnt">${ph.length}</span>`:''}</div><div class="body"><div class="t">${esc(rTitle(r))}</div><div class="s">${sub}</div>${memo?`<div class="m">${esc(memo.split('\n')[0])}</div>`:''}</div></button>`}).join('');
+    const thumbs=ph.length?ph.slice(0,2).map((id,i)=>`<div class="thumb"><img alt="" data-mid="${id}" data-kind="t">${i===1&&ph.length>2?`<span class="cnt">+${ph.length-2}</span>`:''}</div>`).join(''):`<div class="thumb">${r.type==='duty'?'🧾':'🛍️'}</div>`;
+    return `<button class="item" data-id="${r.id}"><div class="thumbs">${thumbs}</div><div class="body"><div class="t">${esc(rTitle(r))}</div><div class="s">${sub}</div>${memo?`<div class="m">${esc(memo.split('\n')[0])}</div>`:''}</div></button>`}).join('');
   list.querySelectorAll('img[data-mid]').forEach(lazy);
   list.querySelectorAll('.item').forEach(b=>b.onclick=()=>openDetail(b.dataset.id));
 }
@@ -465,13 +472,15 @@ $('#fVendor').onchange=vendorEtcToggle;
 function slotsEl(){return formType==='duty'?$('#slots1'):$('#slots2')}
 function renderSlots(){
   const el=slotsEl();
-  el.innerHTML=slots.map((s,i)=>`<div class="pslot${s?' filled':''}${!s&&pickSlot===i?' sel':''}" data-i="${i}" tabindex="0">${s?`<img alt="사진 ${i+1}"${s.url?` src="${s.url}"`:` data-mid="${s.id}" data-kind="t"`}><span class="no">사진 ${i+1}</span><button class="rm" data-rm="${i}" aria-label="사진 ${i+1} 삭제">✕</button>`:`<button type="button" class="pick" data-pick="${i}"><span class="plus">＋</span><span>사진 ${i+1}</span></button><span class="ph">${pickSlot===i?'여기에 붙여넣기 (Ctrl+V)':''}</span>`}</div>`).join('');
+  el.innerHTML=slots.map((s,i)=>`<div class="pslot${s?' filled':''}${!s&&pickSlot===i?' sel':''}" data-i="${i}" tabindex="0">${s?`<img alt="사진 ${i+1}"${s.url?` src="${s.url}"`:` data-mid="${s.id}" data-kind="t"`}><span class="no">사진 ${i+1}</span><button class="rm" data-rm="${i}" aria-label="사진 ${i+1} 삭제">✕</button><span class="mv"><button type="button" data-mv="${i}:-1" ${i===0?'disabled':''} aria-label="앞으로"><span class="h">◀</span><span class="v">▲</span></button><button type="button" data-mv="${i}:1" ${i===2?'disabled':''} aria-label="뒤로"><span class="h">▶</span><span class="v">▼</span></button></span>`:`<button type="button" class="pick" data-pick="${i}"><span class="plus">＋</span><span>사진 ${i+1}</span></button><span class="ph">${pickSlot===i?'여기에 붙여넣기 (Ctrl+V)':''}</span>`}</div>`).join('');
   el.querySelectorAll('img[data-mid]').forEach(lazy);
   // ＋ 버튼만 파일 창을 연다
   el.querySelectorAll('[data-pick]').forEach(b=>b.onclick=e=>{e.stopPropagation();pickSlot=+b.dataset.pick;$('#file').value='';$('#file').click()});
   // 칸의 나머지 영역: 채워진 칸은 확대 보기, 빈 칸은 붙여넣기 대상으로 선택만
-  el.querySelectorAll('.pslot').forEach(p=>{p.onclick=e=>{if(e.target.closest('[data-rm],[data-pick]'))return;const i=+p.dataset.i;if(slots[i]){const list=slots.filter(Boolean);openViewer(list,list.indexOf(slots[i]),'첨부 사진')}else{pickSlot=pickSlot===i?-1:i;renderSlots();el.querySelector(`.pslot[data-i="${i}"]`)?.focus()}};p.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const i=+p.dataset.i;if(slots[i])p.click();else{pickSlot=i;$('#file').value='';$('#file').click()}}}});
-  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=e=>{e.stopPropagation();const i=+b.dataset.rm;const s=slots[i];if(s?.url&&!s.id)URL.revokeObjectURL(s.url);slots[i]=null;renderSlots()});
+  el.querySelectorAll('.pslot').forEach(p=>{p.onclick=e=>{if(e.target.closest('[data-rm],[data-pick],[data-mv]'))return;const i=+p.dataset.i;if(slots[i]){const list=slots.filter(Boolean);openViewer(list,list.indexOf(slots[i]),'첨부 사진')}else{pickSlot=pickSlot===i?-1:i;renderSlots();el.querySelector(`.pslot[data-i="${i}"]`)?.focus()}};p.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const i=+p.dataset.i;if(slots[i])p.click();else{pickSlot=i;$('#file').value='';$('#file').click()}}}});
+  el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=e=>{e.stopPropagation();const i=+b.dataset.rm;const s=slots[i];if(s?.url&&!s.id)URL.revokeObjectURL(s.url);slots[i]=null;renderSlots();saveDraftText()});
+  // 순서 바꾸기: 이웃 칸과 자리 교환
+  el.querySelectorAll('[data-mv]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [i,d]=b.dataset.mv.split(':').map(Number);const j=i+d;if(j<0||j>2)return;[slots[i],slots[j]]=[slots[j],slots[i]];pickSlot=-1;renderSlots();saveDraftText()});
 }
 $('#file').addEventListener('change',e=>{const files=[...e.target.files];e.target.value='';addFiles(files)});
 async function addFiles(files){
