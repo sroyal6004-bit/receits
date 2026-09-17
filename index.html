@@ -113,11 +113,12 @@ main{padding:12px 12px 0}
 .pslot .ph{position:absolute;bottom:6px;left:0;right:0;text-align:center;font-size:11px;color:var(--fg3);font-weight:400}
 .pslot .no{position:absolute;left:6px;top:6px;background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:1px 7px;border-radius:999px}
 .pslot .rm{position:absolute;right:4px;top:4px;width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center}
-.pslot .mv{position:absolute;left:4px;bottom:4px;display:flex;gap:4px}
-.pslot .mv button{width:30px;height:30px;border-radius:50%;background:rgba(0,0,0,.65);color:#fff;font-size:14px;display:flex;align-items:center;justify-content:center}
-.pslot .mv button:disabled{opacity:.3}
-.pslot .mv .v{display:none}
-@media(min-width:560px){.split.two .pslot .mv .v{display:inline}.split.two .pslot .mv .h{display:none}}
+.pslot.filled{touch-action:none;cursor:grab;user-select:none;-webkit-user-select:none}
+.pslot img{-webkit-user-drag:none;user-drag:none;pointer-events:none}
+.pslot.dragging{opacity:.35}
+.pslot.over{border-color:var(--acc);border-style:solid;box-shadow:0 0 0 3px rgba(56,189,248,.35)}
+.ghost{position:fixed;z-index:200;width:96px;height:96px;border-radius:12px;overflow:hidden;pointer-events:none;box-shadow:0 12px 32px rgba(0,0,0,.6);transform:translate(-50%,-50%) scale(1.06);opacity:.95;background:var(--card)}
+.ghost img{width:100%;height:100%;object-fit:cover;display:block}
 .hint{font-size:12px;color:var(--fg3);margin-top:6px;line-height:1.5}
 .dl{display:grid;grid-template-columns:auto 1fr;gap:6px 14px;margin:0 0 14px;font-size:15px}
 .dl dt{color:var(--fg2);font-size:13px;padding-top:2px;white-space:nowrap}
@@ -226,7 +227,7 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
           <div class="fld"><label class="lbl" for="fMemo">메모 <span style="font-weight:400;color:var(--fg3)">(선택)</span></label><textarea id="fMemo" rows="3" placeholder="품목, 금액 등 메모"></textarea></div>
           <div class="fld"><label class="lbl">사진</label><div class="pslots" id="slots2"></div></div>
         </div>
-        <p class="hint">사진은 최대 3장. 사진 아래 ◀▶ 버튼으로 순서를 바꿀 수 있습니다. 칸 가운데 <b>＋</b>를 누르면 사진을 고르거나 촬영할 수 있고, 데스크탑에서는 칸을 선택한 뒤 붙여넣기(Ctrl+V)도 됩니다. 창 바깥을 눌러도 닫히지 않으며, 실수로 닫혀도 작성 중이던 내용은 다시 열 때 복원됩니다.</p>
+        <p class="hint">사진은 최대 3장. 사진을 끌어서 다른 칸에 놓으면 순서가 바뀝니다. 칸 가운데 <b>＋</b>를 누르면 사진을 고르거나 촬영할 수 있고, 데스크탑에서는 칸을 선택한 뒤 붙여넣기(Ctrl+V)도 됩니다. 창 바깥을 눌러도 닫히지 않으며, 실수로 닫혀도 작성 중이던 내용은 다시 열 때 복원됩니다.</p>
       </form>
       <input type="file" id="file" accept="image/*" multiple class="hidden">
     </div>
@@ -472,15 +473,38 @@ $('#fVendor').onchange=vendorEtcToggle;
 function slotsEl(){return formType==='duty'?$('#slots1'):$('#slots2')}
 function renderSlots(){
   const el=slotsEl();
-  el.innerHTML=slots.map((s,i)=>`<div class="pslot${s?' filled':''}${!s&&pickSlot===i?' sel':''}" data-i="${i}" tabindex="0">${s?`<img alt="사진 ${i+1}"${s.url?` src="${s.url}"`:` data-mid="${s.id}" data-kind="t"`}><span class="no">사진 ${i+1}</span><button class="rm" data-rm="${i}" aria-label="사진 ${i+1} 삭제">✕</button><span class="mv"><button type="button" data-mv="${i}:-1" ${i===0?'disabled':''} aria-label="앞으로"><span class="h">◀</span><span class="v">▲</span></button><button type="button" data-mv="${i}:1" ${i===2?'disabled':''} aria-label="뒤로"><span class="h">▶</span><span class="v">▼</span></button></span>`:`<button type="button" class="pick" data-pick="${i}"><span class="plus">＋</span><span>사진 ${i+1}</span></button><span class="ph">${pickSlot===i?'여기에 붙여넣기 (Ctrl+V)':''}</span>`}</div>`).join('');
+  el.innerHTML=slots.map((s,i)=>`<div class="pslot${s?' filled':''}${!s&&pickSlot===i?' sel':''}" data-i="${i}" tabindex="0">${s?`<img alt="사진 ${i+1}"${s.url?` src="${s.url}"`:` data-mid="${s.id}" data-kind="t"`}><span class="no">사진 ${i+1}</span><button class="rm" data-rm="${i}" aria-label="사진 ${i+1} 삭제">✕</button>`:`<button type="button" class="pick" data-pick="${i}"><span class="plus">＋</span><span>사진 ${i+1}</span></button><span class="ph">${pickSlot===i?'여기에 붙여넣기 (Ctrl+V)':''}</span>`}</div>`).join('');
   el.querySelectorAll('img[data-mid]').forEach(lazy);
   // ＋ 버튼만 파일 창을 연다
   el.querySelectorAll('[data-pick]').forEach(b=>b.onclick=e=>{e.stopPropagation();pickSlot=+b.dataset.pick;$('#file').value='';$('#file').click()});
   // 칸의 나머지 영역: 채워진 칸은 확대 보기, 빈 칸은 붙여넣기 대상으로 선택만
-  el.querySelectorAll('.pslot').forEach(p=>{p.onclick=e=>{if(e.target.closest('[data-rm],[data-pick],[data-mv]'))return;const i=+p.dataset.i;if(slots[i]){const list=slots.filter(Boolean);openViewer(list,list.indexOf(slots[i]),'첨부 사진')}else{pickSlot=pickSlot===i?-1:i;renderSlots();el.querySelector(`.pslot[data-i="${i}"]`)?.focus()}};p.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const i=+p.dataset.i;if(slots[i])p.click();else{pickSlot=i;$('#file').value='';$('#file').click()}}}});
+  el.querySelectorAll('.pslot').forEach(p=>{p.onclick=e=>{if(Date.now()-dragEndedAt<150)return;if(e.target.closest('[data-rm],[data-pick]'))return;const i=+p.dataset.i;if(slots[i]){const list=slots.filter(Boolean);openViewer(list,list.indexOf(slots[i]),'첨부 사진')}else{pickSlot=pickSlot===i?-1:i;renderSlots();el.querySelector(`.pslot[data-i="${i}"]`)?.focus()}};p.onkeydown=e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();const i=+p.dataset.i;if(slots[i])p.click();else{pickSlot=i;$('#file').value='';$('#file').click()}}}});
   el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=e=>{e.stopPropagation();const i=+b.dataset.rm;const s=slots[i];if(s?.url&&!s.id)URL.revokeObjectURL(s.url);slots[i]=null;renderSlots();saveDraftText()});
-  // 순서 바꾸기: 이웃 칸과 자리 교환
-  el.querySelectorAll('[data-mv]').forEach(b=>b.onclick=e=>{e.stopPropagation();const [i,d]=b.dataset.mv.split(':').map(Number);const j=i+d;if(j<0||j>2)return;[slots[i],slots[j]]=[slots[j],slots[i]];pickSlot=-1;renderSlots();saveDraftText()});
+  // 순서 바꾸기: 채워진 칸을 끌어서 다른 칸에 놓기
+  el.querySelectorAll('.pslot.filled').forEach(bindDrag);
+}
+let drag=null, dragEndedAt=0;
+function bindDrag(p){
+  const i=+p.dataset.i;
+  p.addEventListener('dragstart',e=>e.preventDefault());
+  p.addEventListener('pointerdown',e=>{if(e.button)return;if(e.target.closest('[data-rm]'))return;e.preventDefault();drag={i,x:e.clientX,y:e.clientY,active:false,ghost:null,pid:e.pointerId};try{p.setPointerCapture(e.pointerId)}catch{}});
+  p.addEventListener('pointermove',e=>{
+    if(!drag||drag.pid!==e.pointerId)return;
+    if(!drag.active){if(Math.hypot(e.clientX-drag.x,e.clientY-drag.y)<8)return;drag.active=true;p.classList.add('dragging');const g=document.createElement('div');g.className='ghost';const im=p.querySelector('img');if(im?.src)g.innerHTML=`<img src="${im.src}" alt="">`;document.body.appendChild(g);drag.ghost=g}
+    drag.ghost.style.left=e.clientX+'px';drag.ghost.style.top=e.clientY+'px';
+    const over=document.elementFromPoint(e.clientX,e.clientY)?.closest('.pslot');
+    slotsEl().querySelectorAll('.pslot.over').forEach(x=>x.classList.remove('over'));
+    if(over&&+over.dataset.i!==drag.i)over.classList.add('over');
+  });
+  const end=e=>{
+    if(!drag||drag.pid!==e.pointerId)return;const d=drag;drag=null;if(!d.active)return;
+    d.ghost?.remove();p.classList.remove('dragging');dragEndedAt=Date.now();
+    slotsEl().querySelectorAll('.pslot.over').forEach(x=>x.classList.remove('over'));
+    const over=e.type==='pointerup'?document.elementFromPoint(e.clientX,e.clientY)?.closest('.pslot'):null;
+    if(!over)return;const j=+over.dataset.i;if(j===d.i)return;
+    const it=slots.splice(d.i,1)[0];slots.splice(j,0,it);pickSlot=-1;renderSlots();saveDraftText();
+  };
+  p.addEventListener('pointerup',end);p.addEventListener('pointercancel',end);
 }
 $('#file').addEventListener('change',e=>{const files=[...e.target.files];e.target.value='';addFiles(files)});
 async function addFiles(files){
