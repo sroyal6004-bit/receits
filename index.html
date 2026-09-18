@@ -72,6 +72,8 @@ main{padding:12px 12px 0}
 .item .s{font-size:13px;color:var(--fg2);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .item .m{font-size:13px;color:var(--fg3);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .badge{display:inline-block;font-size:11px;padding:2px 8px;border-radius:999px;background:var(--bg2);color:var(--fg2);font-weight:700;margin-right:6px;vertical-align:1px}
+.seg{display:flex;gap:6px}.seg button{flex:1;min-height:44px;border-radius:10px;background:var(--bg2);border:1px solid var(--line);color:var(--fg2);font-weight:700;font-size:15px}.seg button.on{background:var(--acc);border-color:var(--acc);color:var(--acc-fg)}
+.badge.t-공통{background:#1e2a3b;color:#93c5fd}.badge.t-과세{background:#3b2a12;color:#fcd34d}.badge.t-면세{background:#12332a;color:#6ee7b7}.badge.t-미정{background:#2b2f3b;color:#cbd5e1}
 .badge.v-쿠팡{background:#3b1d1d;color:#fca5a5}.badge.v-네이버{background:#0f3b23;color:#86efac}.badge.v-G마켓{background:#0f2f3b;color:#7dd3fc}.badge.v-11번가{background:#3b1d38;color:#f0abfc}.badge.v-기타{background:#2b2f3b;color:#cbd5e1}
 .empty{text-align:center;color:var(--fg3);padding:60px 20px;line-height:1.7}
 .empty b{display:block;font-size:40px;margin-bottom:8px}
@@ -228,6 +230,7 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
             <div><label class="lbl" for="fDate2">주문날짜</label><input id="fDate2" type="date"></div>
           </div>
           <div class="fld hidden" id="fVendorEtcWrap"><label class="lbl" for="fVendorEtc">주문처 이름</label><input id="fVendorEtc" placeholder="예: 옥션, 오프라인 매장"></div>
+          <div class="fld"><label class="lbl">구분</label><div class="seg" id="fTax"></div></div>
           <div class="fld"><label class="lbl" for="fMemo">메모 <span style="font-weight:400;color:var(--fg3)">(선택)</span></label><textarea id="fMemo" rows="3" placeholder="품목, 금액 등 메모"></textarea></div>
           <div class="fld"><label class="lbl">사진</label><div class="pslots" id="slots2"></div></div>
         </div>
@@ -333,6 +336,7 @@ const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMon
 const fmtDate=s=>{if(!s)return '-';const [y,m,d]=s.split('-');if(!d)return s;const dt=new Date(+y,+m-1,+d);return `${y}.${m}.${d} (${'일월화수목금토'[dt.getDay()]})`};
 let toastT;function toast(msg,ms=1800){const t=$('#toast');t.textContent=msg;t.classList.add('show');clearTimeout(toastT);toastT=setTimeout(()=>t.classList.remove('show'),ms)}
 const VENDORS=['쿠팡','네이버','G마켓','11번가','기타'];
+const TAXES=['공통','과세','면세','미정'];
 const TABS={duty:{name:'면세 기록 장부',dateLabel:'상담날짜'},receipt:{name:'영수증 기록 장부',dateLabel:'주문날짜'}};
 
 /* ========== 저장소 ========== */
@@ -402,7 +406,7 @@ function filtered(){
   return live().filter(r=>r.type===tab).filter(r=>{
     if(tab==='receipt'&&vendorFilter!=='전체'&&(r.vendor||'기타')!==vendorFilter)return false;
     if(!q)return true;
-    const hay=(r.type==='duty'?[r.name,r.customerNo,r.content,r.date]:[r.vendor,r.vendorEtc,r.memo,r.date]).join(' ').toLowerCase();
+    const hay=(r.type==='duty'?[r.name,r.customerNo,r.content,r.date]:[r.vendor,r.vendorEtc,r.memo,r.date,r.tax]).join(' ').toLowerCase();
     return hay.includes(q);
   }).sort((a,b)=>rDate(b).localeCompare(rDate(a))||(b.updated||0)-(a.updated||0));
 }
@@ -414,7 +418,7 @@ function render(){
   if(!rows.length){list.innerHTML=`<div class="empty"><b>${tab==='duty'?'🧾':'🛍️'}</b>${all.length?'검색 결과가 없습니다':`${TABS[tab].name}에 아직 기록이 없습니다.<br>오른쪽 아래 <strong>+</strong> 버튼으로 첫 기록을 추가해 보세요.`}</div>`;return}
   const shown=rows.slice(0,listLimit);
   list.innerHTML=shown.map(r=>{const ph=photosOf(r);
-    const sub=r.type==='duty'?fmtDate(r.date):`<span class="badge v-${esc(r.vendor||'기타')}">${esc(r.vendor||'기타')}</span>${fmtDate(r.date)}`;
+    const sub=r.type==='duty'?fmtDate(r.date):`<span class="badge v-${esc(r.vendor||'기타')}">${esc(r.vendor||'기타')}</span>${r.tax?`<span class="badge t-${esc(r.tax)}">${esc(r.tax)}</span>`:''}${fmtDate(r.date)}`;
     const memo=(r.type==='duty'?r.content:r.memo)||'';
     const thumbs=ph.length?ph.slice(0,2).map((id,i)=>`<div class="thumb"><img alt="" data-mid="${id}" data-kind="t">${i===1&&ph.length>2?`<span class="cnt">+${ph.length-2}</span>`:''}</div>`).join(''):`<div class="thumb">${r.type==='duty'?'🧾':'🛍️'}</div>`;
     return `<button class="item" data-id="${r.id}"><div class="thumbs">${thumbs}</div><div class="body"><div class="t">${esc(rTitle(r))}</div><div class="s">${sub}</div>${memo?`<div class="m">${esc(memo.split('\n')[0])}</div>`:''}</div></button>`}).join('')
@@ -432,7 +436,7 @@ function renderDetail(r){
   const ph=photosOf(r);
   let dl='';
   if(r.type==='duty')dl=`<dt>이름</dt><dd>${esc(r.name||'-')}</dd><dt>고객번호</dt><dd>${esc(r.customerNo||'-')}</dd><dt>상담날짜</dt><dd>${fmtDate(r.date)}</dd><dt>진료내용</dt><dd class="pre">${r.content?linkify(r.content):'-'}</dd>`;
-  else dl=`<dt>주문처</dt><dd><span class="badge v-${esc(r.vendor||'기타')}">${esc(r.vendor||'기타')}</span>${r.vendor==='기타'&&r.vendorEtc?esc(r.vendorEtc):''}</dd><dt>주문날짜</dt><dd>${fmtDate(r.date)}</dd><dt>메모</dt><dd class="pre">${r.memo?linkify(r.memo):'-'}</dd>`;
+  else dl=`<dt>주문처</dt><dd><span class="badge v-${esc(r.vendor||'기타')}">${esc(r.vendor||'기타')}</span>${r.vendor==='기타'&&r.vendorEtc?esc(r.vendorEtc):''}</dd><dt>구분</dt><dd><span class="badge t-${esc(r.tax||'미정')}">${esc(r.tax||'미정')}</span></dd><dt>주문날짜</dt><dd>${fmtDate(r.date)}</dd><dt>메모</dt><dd class="pre">${r.memo?linkify(r.memo):'-'}</dd>`;
   $('#detBody').innerHTML=`<dl class="dl">${dl}</dl><label class="lbl">사진 ${ph.length?`(${ph.length}장)`:''}</label>${ph.length?`<div class="strip">${ph.map((id,i)=>`<button data-i="${i}"><img alt="사진 ${i+1}" data-mid="${id}" data-kind="t"><span class="no">사진 ${i+1}</span></button>`).join('')}</div>`:`<p class="hint">첨부된 사진이 없습니다.</p>`}<p class="hint">최근 수정: ${r.updated?new Date(r.updated).toLocaleString('ko-KR'):'-'}</p>`;
   $('#detBody').querySelectorAll('img[data-mid]').forEach(lazy);
   $('#detBody').querySelectorAll('.strip button').forEach(b=>b.onclick=()=>openViewer(ph.map(id=>({id})),+b.dataset.i,rTitle(r)));
@@ -448,7 +452,7 @@ let editId=null, formType='duty';
 let slots=[null,null,null]; // {id?, blob?, thumb?, url}
 let pickSlot=-1, formInitial='', formCloseMode=null, draft=null;
 const LS_DRAFT='ledger.draft';
-function formFields(){return formType==='duty'?{name:$('#fName').value,customerNo:$('#fCust').value,date:$('#fDate1').value,content:$('#fContent').value}:{vendor:$('#fVendor').value,vendorEtc:$('#fVendorEtc').value,date:$('#fDate2').value,memo:$('#fMemo').value}}
+function formFields(){return formType==='duty'?{name:$('#fName').value,customerNo:$('#fCust').value,date:$('#fDate1').value,content:$('#fContent').value}:{vendor:$('#fVendor').value,vendorEtc:$('#fVendorEtc').value,date:$('#fDate2').value,memo:$('#fMemo').value,tax:taxSel}}
 function formSig(){return JSON.stringify([formFields(),slots.map(s=>s?(s.id||'new'):null)])}
 const formDirty=()=>formSig()!==formInitial;
 function saveDraftText(){try{if(formDirty())localStorage.setItem(LS_DRAFT,JSON.stringify({editId,formType,f:formFields(),t:Date.now()}));else localStorage.removeItem(LS_DRAFT)}catch{}}
@@ -463,7 +467,7 @@ function fillForm(r){
   formInitial=formSig();
   if(d){const f=d.f||{};
     if(formType==='duty'){$('#fName').value=f.name??'';$('#fCust').value=f.customerNo??'';$('#fDate1').value=f.date||today();$('#fContent').value=f.content??''}
-    else{$('#fVendor').value=VENDORS.includes(f.vendor)?f.vendor:'쿠팡';$('#fVendorEtc').value=f.vendorEtc??'';$('#fDate2').value=f.date||today();$('#fMemo').value=f.memo??'';vendorEtcToggle()}
+    else{$('#fVendor').value=VENDORS.includes(f.vendor)?f.vendor:'쿠팡';$('#fVendorEtc').value=f.vendorEtc??'';$('#fDate2').value=f.date||today();$('#fMemo').value=f.memo??'';taxSel=TAXES.includes(f.tax)?f.tax:'미정';renderTax();vendorEtcToggle()}
     if(d.slots){slots=d.slots;renderSlots()}
     draft=null;toast('작성 중이던 내용을 복원했습니다',2200)}
 }
@@ -472,7 +476,7 @@ function fillFormBase(r){
   $('#btnSave').textContent=r?'수정 저장':'저장';
   $('#fDuty').classList.toggle('hidden',formType!=='duty');$('#fReceipt').classList.toggle('hidden',formType!=='receipt');
   $('#fName').value=r?.name||'';$('#fCust').value=r?.customerNo||'';$('#fDate1').value=r?.date||today();$('#fContent').value=r?.content||'';
-  $('#fVendor').value=r&&VENDORS.includes(r.vendor)?r.vendor:'쿠팡';$('#fVendorEtc').value=r?.vendorEtc||'';$('#fDate2').value=r?.date||today();$('#fMemo').value=r?.memo||'';
+  $('#fVendor').value=r&&VENDORS.includes(r.vendor)?r.vendor:'쿠팡';$('#fVendorEtc').value=r?.vendorEtc||'';$('#fDate2').value=r?.date||today();$('#fMemo').value=r?.memo||'';taxSel=TAXES.includes(r?.tax)?r.tax:'미정';renderTax();
   vendorEtcToggle();
   slots=[null,null,null];photosOf(r||{}).slice(0,3).forEach((id,i)=>slots[i]={id});
   pickSlot=-1;renderSlots();
@@ -482,6 +486,8 @@ function requestFormClose(){
   if(!formDirty()){formCloseMode='discard';uiBack();return}
   actionSheet('작성 중인 내용이 있습니다. 닫으면 사라집니다.',[{label:'버리고 닫기',danger:true,fn:()=>{formCloseMode='discard';uiBack()}},{label:'임시 저장하고 닫기',fn:()=>{formCloseMode=null;uiBack()}}]);
 }
+let taxSel='미정';
+function renderTax(){$('#fTax').innerHTML=TAXES.map(t=>`<button type="button" data-tax="${t}" class="${taxSel===t?'on':''}">${t}</button>`).join('');$('#fTax').querySelectorAll('button').forEach(b=>b.onclick=()=>{taxSel=b.dataset.tax;renderTax();saveDraftText()})}
 function vendorEtcToggle(){$('#fVendorEtcWrap').classList.toggle('hidden',$('#fVendor').value!=='기타')}
 $('#fVendor').onchange=vendorEtcToggle;
 function slotsEl(){return formType==='duty'?$('#slots1'):$('#slots2')}
@@ -553,7 +559,7 @@ $('#btnSave').onclick=async()=>{
     }else{
       const vendor=$('#fVendor').value,vendorEtc=$('#fVendorEtc').value.trim(),date=$('#fDate2').value,memo=$('#fMemo').value.trim();
       if(!date){toast('주문날짜를 선택해 주세요');$('#fDate2').focus();return}
-      Object.assign(r,{vendor,vendorEtc:vendor==='기타'?vendorEtc:'',date,memo});
+      Object.assign(r,{vendor,vendorEtc:vendor==='기타'?vendorEtc:'',date,memo,tax:taxSel});
     }
     const oldIds=photosOf(r), newIds=[];
     for(const s of slots){if(!s)continue;if(s.id){newIds.push(s.id);continue}const id=uid();await idbPut({id,blob:s.blob,thumb:s.thumb});urlCache.set(id+':t',s.url);s.id=id;newIds.push(id)}
@@ -670,7 +676,7 @@ $('#btnExportHtml').onclick=async()=>{const b=$('#btnExportHtml');b.disabled=tru
   const byDate=(a,c)=>(c.date||'').localeCompare(a.date||'')||(c.updated||0)-(a.updated||0);
   const photos=r=>{const ph=photosOf(r).filter(id=>imgs[id]);return ph.length?`<div class="photos">${ph.map((id,i)=>`<a class="ph" href="#"${imgs[id].f?` data-full="${imgs[id].f}"`:''}><img src="${imgs[id].f||imgs[id].t}" alt="사진 ${i+1}"><span>사진 ${i+1}</span></a>`).join('')}</div>`:''};
   const dutyCard=r=>`<article class="rec"><div class="hd"><span class="date">${fmtDate(r.date)}</span><b>${esc(r.name||'(이름 없음)')}</b>${r.customerNo?`<span class="tag">고객번호 ${esc(r.customerNo)}</span>`:''}</div>${r.content?`<div class="txt">${linkify(r.content)}</div>`:''}${photos(r)}</article>`;
-  const rcCard=r=>`<article class="rec"><div class="hd"><span class="date">${fmtDate(r.date)}</span><b>${esc(r.vendor||'기타')}${r.vendor==='기타'&&r.vendorEtc?` · ${esc(r.vendorEtc)}`:''}</b></div>${r.memo?`<div class="txt">${linkify(r.memo)}</div>`:''}${photos(r)}</article>`;
+  const rcCard=r=>`<article class="rec"><div class="hd"><span class="date">${fmtDate(r.date)}</span><b>${esc(r.vendor||'기타')}${r.vendor==='기타'&&r.vendorEtc?` · ${esc(r.vendorEtc)}`:''}</b><span class="taxbox t-${esc(r.tax||'미정')}">${esc(r.tax||'미정')}</span></div>${r.memo?`<div class="txt">${linkify(r.memo)}</div>`:''}${photos(r)}</article>`;
   const bk=bookOf();const duty=bk==='receipt'?[]:recs.filter(r=>r.type==='duty').sort(byDate),rc=bk==='duty'?[]:recs.filter(r=>r.type==='receipt').sort(byDate);
   const title=`${bk==='both'?'기록 장부':BOOK_LABEL[bk]+' 기록 장부'} — ${rg.period}`;
   const section=(name,list,card)=>`<h2>${name} (${list.length}건)</h2>${list.length?list.map(card).join(''):'<p class="meta">기록 없음</p>'}`;
@@ -678,9 +684,10 @@ $('#btnExportHtml').onclick=async()=>{const b=$('#btnExportHtml');b.disabled=tru
 <style>:root{--ph:280px;--pph:30mm;--pmax:110mm;--pcols:2}@page{size:A4;margin:10mm}body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;margin:0;padding:20px;color:#111;background:#fff;max-width:1100px;margin:0 auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid #333}.meta{color:#666;font-size:13px;margin:0 0 8px}
 .tools{position:sticky;top:0;background:#fff;padding:8px 0;border-bottom:1px solid #ddd;margin-bottom:8px;font-size:13px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.tools button{font:inherit;padding:5px 10px;border:1px solid #bbb;background:#f7f7f7;border-radius:6px;cursor:pointer}.tools button.on{background:#333;color:#fff;border-color:#333}
 .rec{border:1px solid #ccc;border-radius:10px;padding:12px 14px;margin:0 0 12px;page-break-inside:avoid;break-inside:avoid}.hd{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:15px}.hd .date{color:#555;font-variant-numeric:tabular-nums}.hd b{font-size:17px}.tag{color:#666;font-size:13px}
+.taxbox{display:inline-block;border:2px solid #333;border-radius:6px;padding:1px 10px;font-weight:700;font-size:14px;margin-left:4px}.taxbox.t-과세{border-color:#b45309;color:#b45309}.taxbox.t-면세{border-color:#047857;color:#047857}.taxbox.t-공통{border-color:#1d4ed8;color:#1d4ed8}.taxbox.t-미정{border-color:#888;color:#666;border-style:dashed}
 .txt{white-space:pre-wrap;line-height:1.55;margin:8px 0 0;font-size:15px}.photos{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}a.ph{display:inline-block;text-decoration:none;color:#666;font-size:12px;text-align:center}a.ph img{display:block;height:var(--ph);max-width:100%;width:auto;object-fit:contain;border:1px solid #ddd;border-radius:6px;background:#fafafa}
 #lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);align-items:center;justify-content:center;cursor:zoom-out;z-index:9}#lb img{max-width:98vw;max-height:98vh}
-@media print{body{padding:0;max-width:none}.tools{display:none}#lb{display:none!important}h1{font-size:16pt}h2{font-size:12pt;margin:6mm 0 3mm}.meta{font-size:9pt}.wrap{display:grid;grid-template-columns:repeat(var(--pcols),1fr);gap:3mm 6mm;align-items:start}h2{grid-column:1/-1}.meta{grid-column:1/-1}.rec{border-color:#999;padding:2.5mm 3mm;margin:0;font-size:10pt;break-inside:avoid;page-break-inside:avoid}.hd{font-size:10pt}.hd b{font-size:11pt}.txt{font-size:10pt;margin-top:1.5mm}.photos{gap:2mm;margin-top:2mm}a.ph{font-size:8pt;flex:1 1 0;min-width:0}a.ph img{width:100%;height:auto;max-height:var(--pmax);object-fit:contain;border:0;background:none}html[data-fit="h"] a.ph{flex:0 0 auto}html[data-fit="h"] a.ph img{width:auto;height:var(--pph);max-height:none}a.ph span{display:none}html[data-nophoto="1"] .photos{display:none}}</style></head>
+@media print{body{padding:0;max-width:none}.tools{display:none}#lb{display:none!important}h1{font-size:16pt}h2{font-size:12pt;margin:6mm 0 3mm}.meta{font-size:9pt}.wrap{display:grid;grid-template-columns:repeat(var(--pcols),1fr);gap:3mm 6mm;align-items:start}h2{grid-column:1/-1}.meta{grid-column:1/-1}.rec{border-color:#999;padding:2.5mm 3mm;margin:0;font-size:10pt;break-inside:avoid;page-break-inside:avoid}.hd{font-size:10pt}.hd b{font-size:11pt}.taxbox{font-size:9pt;padding:0 6px}.txt{font-size:10pt;margin-top:1.5mm}.photos{gap:2mm;margin-top:2mm}a.ph{font-size:8pt;flex:1 1 0;min-width:0}a.ph img{width:100%;height:auto;max-height:var(--pmax);object-fit:contain;border:0;background:none}html[data-fit="h"] a.ph{flex:0 0 auto}html[data-fit="h"] a.ph img{width:auto;height:var(--pph);max-height:none}a.ph span{display:none}html[data-nophoto="1"] .photos{display:none}}</style></head>
 <body><h1>${esc(title)}</h1><p class="meta">내보낸 시각 ${new Date().toLocaleString('ko-KR')} · 면세 ${duty.length}건 · 영수증 ${rc.length}건 · 사진 ${ids.length}장${embedFull?'':' (사진 300장 초과라 작은 크기로만 포함)'}</p>
 <div class="tools">화면 사진 크기 <button data-s="160">작게</button><button data-s="280" class="on">보통</button><button data-s="480">크게</button><button data-s="800">아주 크게</button> <span style="margin-left:auto">사진을 누르면 화면 가득 보입니다</span></div>
 <div class="tools" style="top:41px">인쇄 형식 <button data-p="2,w,110mm" class="on">2단 (사진 칸 너비에 맞춤)</button><button data-p="1,w,170mm">1단 (사진 크게)</button><button data-p="2,h,30mm">촘촘히 (2단 · 사진 작게)</button><button data-p="2,0,0">사진 없이</button> <span style="margin-left:auto;color:#666">A4 세로 기준</span> <button onclick="window.print()"><b>인쇄 / PDF 저장</b></button></div>
