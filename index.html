@@ -286,8 +286,8 @@ service cloud.firestore {
       <label class="lbl">백업</label>
       <div class="set-list">
         <button class="btn" id="btnExport">📤 데이터 백업 (JSON)<small>사진 제외 · 가벼움</small></button>
-        <button class="btn" id="btnExportFull">🗂 전체 백업 (사진 포함)<small>용량 큼</small></button>
-        <button class="btn" id="btnImport">📥 백업 가져오기<small>병합 · 덮어쓰지 않음</small></button>
+        <button class="btn" id="btnExportFull">🗂 전체 백업 (사진 포함)<small>용량 큼 · 많으면 파일 분할</small></button>
+        <button class="btn" id="btnImport">📥 백업 가져오기<small>병합 · 분할 파일은 하나씩</small></button>
         <input type="file" id="importFile" accept="application/json,.json" class="hidden">
       </div>
       <p class="about" id="about"></p>
@@ -379,11 +379,12 @@ document.addEventListener('click',e=>{if(e.target.closest('[data-formclose]')){e
 /* ========== 상태 / 목록 ========== */
 let tab=localStorage.getItem(LS_TAB)==='receipt'?'receipt':'duty';
 let query='', vendorFilter='전체';
-function setTab(t){tab=t;localStorage.setItem(LS_TAB,t);$$('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));$('#q').placeholder=t==='duty'?'이름 · 고객번호 · 진료내용 검색':'주문처 · 메모 검색';renderChips();render()}
+let listLimit=100;const PAGE=100;
+function setTab(t){tab=t;listLimit=PAGE;localStorage.setItem(LS_TAB,t);$$('.tab').forEach(b=>b.classList.toggle('on',b.dataset.tab===t));$('#q').placeholder=t==='duty'?'이름 · 고객번호 · 진료내용 검색':'주문처 · 메모 검색';renderChips();render()}
 $$('.tab').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));
-$('#q').addEventListener('input',e=>{query=e.target.value.trim();$('#qClr').classList.toggle('hidden',!query);render()});
+$('#q').addEventListener('input',e=>{query=e.target.value.trim();listLimit=PAGE;$('#qClr').classList.toggle('hidden',!query);render()});
 $('#qClr').onclick=()=>{$('#q').value='';query='';$('#qClr').classList.add('hidden');render();$('#q').focus()};
-function renderChips(){const c=$('#chips');if(tab!=='receipt'){c.innerHTML='';c.style.display='none';return}c.style.display='';c.innerHTML=['전체',...VENDORS].map(v=>`<button class="chip${vendorFilter===v?' on':''}" data-v="${v}">${v}</button>`).join('');c.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{vendorFilter=b.dataset.v;renderChips();render()})}
+function renderChips(){const c=$('#chips');if(tab!=='receipt'){c.innerHTML='';c.style.display='none';return}c.style.display='';c.innerHTML=['전체',...VENDORS].map(v=>`<button class="chip${vendorFilter===v?' on':''}" data-v="${v}">${v}</button>`).join('');c.querySelectorAll('.chip').forEach(b=>b.onclick=()=>{vendorFilter=b.dataset.v;listLimit=PAGE;renderChips();render()})}
 const rDate=r=>r.date||'';
 const rTitle=r=>r.type==='duty'?[r.name,r.customerNo].filter(Boolean).join(' · ')||'(이름 없음)':(r.vendor==='기타'&&r.vendorEtc?`기타 · ${r.vendorEtc}`:(r.vendor||'기타'));
 const photosOf=r=>Array.isArray(r.photos)?r.photos.filter(Boolean):[];
@@ -402,13 +403,16 @@ function render(){
   $('#stats').innerHTML=`<div class="stat"><b>${all.length}</b><span>전체 기록</span></div><div class="stat"><b>${month}</b><span>이번 달</span></div><div class="stat"><b>${photos}</b><span>사진</span></div>`;
   const rows=filtered(), list=$('#list');
   if(!rows.length){list.innerHTML=`<div class="empty"><b>${tab==='duty'?'🧾':'🛍️'}</b>${all.length?'검색 결과가 없습니다':`${TABS[tab].name}에 아직 기록이 없습니다.<br>오른쪽 아래 <strong>+</strong> 버튼으로 첫 기록을 추가해 보세요.`}</div>`;return}
-  list.innerHTML=rows.map(r=>{const ph=photosOf(r);
+  const shown=rows.slice(0,listLimit);
+  list.innerHTML=shown.map(r=>{const ph=photosOf(r);
     const sub=r.type==='duty'?fmtDate(r.date):`<span class="badge v-${esc(r.vendor||'기타')}">${esc(r.vendor||'기타')}</span>${fmtDate(r.date)}`;
     const memo=(r.type==='duty'?r.content:r.memo)||'';
     const thumbs=ph.length?ph.slice(0,2).map((id,i)=>`<div class="thumb"><img alt="" data-mid="${id}" data-kind="t">${i===1&&ph.length>2?`<span class="cnt">+${ph.length-2}</span>`:''}</div>`).join(''):`<div class="thumb">${r.type==='duty'?'🧾':'🛍️'}</div>`;
-    return `<button class="item" data-id="${r.id}"><div class="thumbs">${thumbs}</div><div class="body"><div class="t">${esc(rTitle(r))}</div><div class="s">${sub}</div>${memo?`<div class="m">${esc(memo.split('\n')[0])}</div>`:''}</div></button>`}).join('');
+    return `<button class="item" data-id="${r.id}"><div class="thumbs">${thumbs}</div><div class="body"><div class="t">${esc(rTitle(r))}</div><div class="s">${sub}</div>${memo?`<div class="m">${esc(memo.split('\n')[0])}</div>`:''}</div></button>`}).join('')
+    +(rows.length>shown.length?`<button class="btn sec" id="btnMoreList" style="margin-top:4px">더 보기 (${rows.length-shown.length}건 남음)</button>`:'');
   list.querySelectorAll('img[data-mid]').forEach(lazy);
   list.querySelectorAll('.item').forEach(b=>b.onclick=()=>openDetail(b.dataset.id));
+  const more=$('#btnMoreList');if(more)more.onclick=()=>{listLimit+=PAGE;render()};
 }
 
 /* ========== 상세 ========== */
@@ -598,10 +602,21 @@ $('#btnSettings').onclick=()=>openLayer('L-settings',()=>{$('#syncCode').value=s
 function download(name,text){const b=new Blob([text],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
 $('#btnExport').onclick=()=>{download(`기록장부_백업_${today()}.json`,JSON.stringify({app:'ledger',version:1,exported:Date.now(),records},null,1));toast('백업 파일을 내려받습니다')};
 const b64=blob=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)});
-$('#btnExportFull').onclick=async()=>{toast('사진을 모으는 중…',4000);try{const all=await idbAll();const used=new Set(live().flatMap(photosOf));const media=[];for(const m of all){if(!used.has(m.id))continue;media.push({id:m.id,blob:await b64(m.blob),thumb:m.thumb?await b64(m.thumb):null})}download(`기록장부_전체백업_${today()}.json`,JSON.stringify({app:'ledger',version:1,exported:Date.now(),records,media}));toast(`전체 백업 완료 (사진 ${media.length}장)`)}catch(e){toast('백업 실패: '+e.message)}};
+let BACKUP_CHUNK_BYTES=80*1024*1024; // 파일 하나에 담는 사진 원본 합계(브라우저 메모리 보호)
+$('#btnExportFull').onclick=async()=>{const b=$('#btnExportFull');b.disabled=true;toast('사진을 모으는 중…',4000);try{
+  const all=await idbAll();const used=new Set(live().flatMap(photosOf));const items=all.filter(m=>used.has(m.id)&&m.blob);
+  const total=items.reduce((n,m)=>n+m.blob.size,0);const parts=[];let cur=[],curSize=0;
+  for(const m of items){if(cur.length&&curSize+m.blob.size>BACKUP_CHUNK_BYTES){parts.push(cur);cur=[];curSize=0}cur.push(m);curSize+=m.blob.size}
+  if(cur.length||!parts.length)parts.push(cur);
+  if(parts.length>1)toast(`사진 ${items.length}장(${(total/1048576).toFixed(0)}MB)이라 ${parts.length}개 파일로 나눠 저장합니다. 브라우저가 "여러 파일 다운로드 허용"을 물으면 허용해 주세요`,6000);
+  for(let i=0;i<parts.length;i++){const media=[];for(const m of parts[i]){media.push({id:m.id,blob:await b64(m.blob),thumb:m.thumb?await b64(m.thumb):null})}
+    const name=parts.length>1?`기록장부_전체백업_${today()}_${i+1}of${parts.length}.json`:`기록장부_전체백업_${today()}.json`;
+    download(name,JSON.stringify({app:'ledger',version:1,exported:Date.now(),part:i+1,parts:parts.length,records:i===0?records:[],media}));
+    if(i<parts.length-1)await new Promise(r=>setTimeout(r,1200))}
+  toast(`전체 백업 완료 (사진 ${items.length}장, 파일 ${parts.length}개)`,4000)}catch(e){toast('백업 실패: '+e.message)}finally{b.disabled=false}};
 $('#btnImport').onclick=()=>{$('#importFile').value='';$('#importFile').click()};
 $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!d||d.app!=='ledger'||!Array.isArray(d.records))throw new Error('이 앱의 백업 파일이 아닙니다');
-  let n=0;for(const r of d.records){if(!r?.id)continue;const cur=records.find(x=>x.id===r.id);if(!cur){records.push(r);n++}else if((r.updated||0)>(cur.updated||0)){Object.assign(cur,r);n++}}
+  let n=0;for(const r of d.records){if(!r?.id)continue;const cur=records.find(x=>x.id===r.id);if(!cur){records.push(r);n++;markDirty(r.id)}else if((r.updated||0)>(cur.updated||0)){Object.assign(cur,r);n++;markDirty(r.id)}}
   let m=0;if(Array.isArray(d.media)){for(const it of d.media){if(!it?.id||!it.blob)continue;const blob=await (await fetch(it.blob)).blob();const thumb=it.thumb?await (await fetch(it.thumb)).blob():null;await idbPut({id:it.id,blob,thumb});dropCache(it.id);m++}}
   persist();render();toast(`가져오기 완료: 기록 ${n}건${m?`, 사진 ${m}장`:''} 반영`,2500);fullReconcile()}catch(err){toast('가져오기 실패: '+err.message,3000)}});
 
@@ -617,7 +632,14 @@ const POLL_MS=30000;
 let fb=null, fbMods=null, fbAppN=0, fbUnsub=null, pollT=null, session=0, transport=null; // transport: 'sdk' | 'rest'
 let syncCode=localStorage.getItem(LS_CODE)||'', syncMode=localStorage.getItem(LS_MODE)||'auto'; // auto(SDK 먼저) | rest
 let syncState={status:'off',msg:''}, mediaSynced=new Set(), cloudMap=new Map(), lastSeen=0;
-function loadSynced(){try{mediaSynced=new Set(JSON.parse(localStorage.getItem('ledger.mediaSynced:'+syncCode)||'[]'))}catch{mediaSynced=new Set()}}
+function loadSynced(){try{mediaSynced=new Set(JSON.parse(localStorage.getItem('ledger.mediaSynced:'+syncCode)||'[]'))}catch{mediaSynced=new Set()}
+  try{dirty=new Set(JSON.parse(localStorage.getItem('ledger.dirty:'+syncCode)||'[]'))}catch{dirty=new Set()}
+  try{lastSeen=Number(localStorage.getItem('ledger.lastSeen:'+syncCode)||0)}catch{lastSeen=0}
+  try{cloudMap=new Map(JSON.parse(localStorage.getItem('ledger.cloudMap:'+syncCode)||'[]'))}catch{cloudMap=new Map()}}
+let dirty=new Set();
+function markDirty(id){if(!syncCode)return;dirty.add(id);try{localStorage.setItem('ledger.dirty:'+syncCode,JSON.stringify([...dirty]))}catch{}}
+function clearDirty(id){if(!dirty.delete(id))return;try{localStorage.setItem('ledger.dirty:'+syncCode,JSON.stringify([...dirty]))}catch{}}
+let syncStateT;function saveSyncState(){clearTimeout(syncStateT);syncStateT=setTimeout(()=>{try{localStorage.setItem('ledger.lastSeen:'+syncCode,String(lastSeen));localStorage.setItem('ledger.cloudMap:'+syncCode,JSON.stringify([...cloudMap]))}catch{}},500)}
 function markSynced(id){mediaSynced.add(id);try{localStorage.setItem('ledger.mediaSynced:'+syncCode,JSON.stringify([...mediaSynced]))}catch{}}
 const syncOn=()=>!!(transport&&syncCode&&syncState.status==='on');
 const cloudCount=()=>{let n=0;cloudMap.forEach(d=>{if(!d)n++});return n};
@@ -663,7 +685,9 @@ async function loadFirebase(){
   if(fb)return fb;
   if(!fbMods){const base=`https://www.gstatic.com/firebasejs/${FB_VER}/`;const [app,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-firestore.js')]);fbMods={app,fs}}
   const {app,fs}=fbMods;const a=app.initializeApp(FB_CONFIG,'ledger'+(fbAppN++));
-  fb={app:a,fs,db:fs.initializeFirestore(a,{experimentalAutoDetectLongPolling:true},FB_DB_ID)};return fb}
+  let db;try{db=fs.initializeFirestore(a,{experimentalAutoDetectLongPolling:true,localCache:fs.persistentLocalCache({tabManager:fs.persistentMultipleTabManager()})},FB_DB_ID)}
+  catch(e){console.warn('persistence off',e);db=fs.initializeFirestore(a,{experimentalAutoDetectLongPolling:true},FB_DB_ID)}
+  fb={app:a,fs,db};return fb}
 async function stopSdk(){if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}if(fb){const f=fb;fb=null;try{await f.fs.terminate(f.db)}catch{}try{await fbMods.app.deleteApp(f.app)}catch{}}}
 
 /* --- 연결 --- */
@@ -671,7 +695,7 @@ async function connectSync(code){
   code=(code||'').trim();
   if(code.length<10){toast('연결 코드는 10자 이상이어야 합니다');return false}
   disconnectSync(true);const my=++session;
-  syncCode=code;localStorage.setItem(LS_CODE,code);loadSynced();cloudMap=new Map();lastSeen=0;
+  syncCode=code;localStorage.setItem(LS_CODE,code);loadSynced();
   setSync('loading','연결 중…');
   if(syncMode==='rest'){startRest(my);return true}
   try{await loadFirebase()}catch(e){console.warn(e);if(my!==session)return false;setSync('loading','SDK를 못 받아 REST 방식으로 시도 중…');startRest(my);return true}
@@ -681,11 +705,12 @@ async function connectSync(code){
   fbUnsub=fb.fs.onSnapshot(col,{includeMetadataChanges:true},snap=>{
     if(my!==session)return;
     if(snap.metadata.fromCache)return; // 서버에 닿지 못한 캐시 응답은 무시(빈 목록을 연결 성공으로 오인하지 않게)
-    let changed=false;cloudMap=new Map();snap.forEach(d=>{const x=d.data();cloudMap.set(d.id,!!x.deleted)});
-    for(const ch of snap.docChanges()){if(ch.type==='removed')continue;if(applyRemote(fromSdk(ch.doc.data())))changed=true}
-    if(first){first=false;transport='sdk';setSync('on','연결됨 · 실시간 동기화 중');const remote=new Map();snap.forEach(d=>remote.set(d.id,d.data()));pushLocalNewer(remote);pushMissingMedia()}
+    let changed=false;cloudMap=new Map();snap.forEach(d=>{const x=d.data();cloudMap.set(d.id,!!x.deleted);lastSeen=Math.max(lastSeen,x.updated||0)});
+    if(first){snap.forEach(d=>{if(applyRemote(fromSdk(d.data())))changed=true})}
+    else for(const ch of snap.docChanges()){if(ch.type==='removed')continue;if(applyRemote(fromSdk(ch.doc.data())))changed=true}
+    if(first){first=false;transport='sdk';setSync('on','연결됨 · 실시간 동기화 중');const remote=new Map();snap.forEach(d=>remote.set(d.id,d.data()));pushLocalNewer(remote);pushDirty();pushMissingMedia()}
     if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}
-    renderSyncStatus();
+    saveSyncState();renderSyncStatus();
   },err=>{if(my!==session)return;console.warn(err);const c=err?.code||'';if(c==='permission-denied'||c==='not-found'||c==='failed-precondition'){setSync('error',errMsg(err));toast('동기화 오류: '+errMsg(err),4000)}else{setSync('loading','실시간 채널 오류 → REST 방식으로 전환 중…');startRest(my)}});
   // 감시: 12초 안에 서버 응답이 없으면 REST 방식으로 전환
   setTimeout(()=>{if(my!==session||syncState.status!=='loading')return;setSync('loading','실시간 채널 응답 없음 → REST 방식으로 전환 중…');startRest(my)},12000);
@@ -693,15 +718,17 @@ async function connectSync(code){
 }
 async function startRest(my){
   try{
-    const docs=await rest.listRecords(0);
+    const full=!(lastSeen>0&&cloudMap.size>0); // 처음 연결이면 전체, 아니면 마지막 확인 이후 변경분만
+    const docs=await rest.listRecords(full?0:lastSeen);
     if(my!==session)return;
     await stopSdk();transport='rest';syncMode='rest';localStorage.setItem(LS_MODE,'rest');
-    cloudMap=new Map();let changed=false;const remote=new Map();
+    if(full)cloudMap=new Map();let changed=false;const remote=new Map();
     for(const x of docs){remote.set(x.id,x);cloudMap.set(x.id,!!x.deleted);lastSeen=Math.max(lastSeen,x.updated||0);if(applyRemote(x))changed=true}
     setSync('on','연결됨 · 폴링 방식(30초마다 확인)');
-    pushLocalNewer(remote);pushMissingMedia();
+    if(full)pushLocalNewer(remote);else{for(const r of records){if(!cloudMap.has(r.id))markDirty(r.id)}}
+    pushDirty();pushMissingMedia();
     if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}
-    schedulePoll();
+    saveSyncState();schedulePoll();
   }catch(e){console.warn(e);if(my!==session)return;setSync('error',errMsg(e));toast('동기화 오류: '+errMsg(e),4000)}
 }
 function schedulePoll(){clearTimeout(pollT);if(transport!=='rest')return;pollT=setTimeout(pollOnce,POLL_MS)}
@@ -710,14 +737,14 @@ async function pollOnce(){
   if(transport!=='rest'||!syncCode){return}
   if(document.visibilityState!=='visible'||polling){schedulePoll();return}
   polling=true;const my=session;
-  try{const docs=await rest.listRecords(lastSeen);if(my!==session)return;let changed=false;for(const x of docs){cloudMap.set(x.id,!!x.deleted);lastSeen=Math.max(lastSeen,x.updated||0);if(applyRemote(x))changed=true}if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}if(syncState.status!=='on')setSync('on','연결됨 · 폴링 방식(30초마다 확인)');else renderSyncStatus()}
+  try{const docs=await rest.listRecords(lastSeen);if(my!==session)return;let changed=false;for(const x of docs){cloudMap.set(x.id,!!x.deleted);lastSeen=Math.max(lastSeen,x.updated||0);if(applyRemote(x))changed=true}if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}saveSyncState();if(dirty.size)pushDirty();if(syncState.status!=='on')setSync('on','연결됨 · 폴링 방식(30초마다 확인)');else renderSyncStatus()}
   catch(e){console.warn(e);if(my===session)setSync('error','확인 실패: '+errMsg(e)+' — 다시 시도 중')}
   finally{polling=false;if(my===session)schedulePoll()}
 }
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&transport==='rest')pollOnce()});
 window.addEventListener('focus',()=>{if(transport==='rest')pollOnce()});
 window.addEventListener('online',()=>{if(!syncCode)return;if(!syncOn())connectSync(syncCode);else if(transport==='rest')pollOnce();else fullReconcile()});
-function disconnectSync(silent){session++;clearTimeout(pollT);pollT=null;if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}transport=null;if(!silent){syncCode='';localStorage.removeItem(LS_CODE);localStorage.removeItem(LS_MODE);syncMode='auto';mediaSynced=new Set();cloudMap=new Map();stopSdk();setSync('off','')}}
+function disconnectSync(silent){session++;clearTimeout(pollT);pollT=null;if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}transport=null;if(!silent){for(const k of ['dirty','lastSeen','cloudMap'])localStorage.removeItem('ledger.'+k+':'+syncCode);syncCode='';localStorage.removeItem(LS_CODE);localStorage.removeItem(LS_MODE);syncMode='auto';mediaSynced=new Set();cloudMap=new Map();dirty=new Set();lastSeen=0;stopSdk();setSync('off','')}}
 
 /* --- 병합 / 송수신 --- */
 function applyRemote(rem){
@@ -731,7 +758,8 @@ function applyRemote(rem){
   if((local.updated||0)>(rem.updated||0))pushRecord(local);
   return false;
 }
-function pushRecord(r){if(!syncOn())return;cloud().set('records',r.id,clean(r)).then(()=>{cloudMap.set(r.id,!!r.deleted);renderSyncStatus()}).catch(e=>{console.warn(e);syncNote('클라우드 저장 실패: '+errMsg(e))})}
+function pushRecord(r){markDirty(r.id);if(!syncOn())return;const upd=r.updated||0;cloud().set('records',r.id,clean(r)).then(()=>{cloudMap.set(r.id,!!r.deleted);lastSeen=Math.max(lastSeen,upd);if((r.updated||0)===upd)clearDirty(r.id);saveSyncState();renderSyncStatus()}).catch(e=>{console.warn(e);syncNote('클라우드 저장 실패: '+errMsg(e))})}
+function pushDirty(){for(const id of [...dirty]){const r=records.find(x=>x.id===id);if(r)pushRecord(r);else clearDirty(id)}}
 function pushLocalNewer(remote){for(const r of records){const rem=remote.get(r.id);if(!rem||(r.updated||0)>(rem.updated||0))pushRecord(r)}}
 async function pushMissingMedia(){if(!syncOn())return;const ids=[...new Set(live().flatMap(photosOf))].filter(id=>!mediaSynced.has(id));for(const id of ids){if(!syncOn())return;try{const m=await cloud().get('media',id);if(m){markSynced(id);continue}}catch(e){console.warn(e);return}await uploadMedia(id)}}
 async function uploadMedia(id){
@@ -751,7 +779,7 @@ function pullMedia(id,kind,rec){const k=id+':'+kind;if(pulling.has(k))return pul
   }catch(e){console.warn(e);syncNote('사진 내려받기 실패: '+errMsg(e));return null}finally{pulling.delete(k)}})();pulling.set(k,p);return p}
 function reloadVisibleMedia(){document.querySelectorAll('img[data-mid]:not([src])').forEach(lazy)}
 function refreshOpenDetail(){if(!uiStack.some(x=>x.tag==='L-detail'))return;const r=records.find(x=>x.id===detailId);if(r&&!r.deleted)renderDetail(r);else{uiBack();toast('다른 기기에서 삭제된 기록입니다')}}
-async function fullReconcile(){if(!syncOn())return null;try{const docs=await cloud().listRecords(0);const remote=new Map();let changed=0;cloudMap=new Map();for(const x of docs){remote.set(x.id,x);cloudMap.set(x.id,!!x.deleted);lastSeen=Math.max(lastSeen,x.updated||0);if(applyRemote(x))changed++}let pushed=0;for(const r of records){const rem=remote.get(r.id);if(!rem||(r.updated||0)>(rem.updated||0)){pushRecord(r);pushed++}}await pushMissingMedia();if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}renderSyncStatus();return {cloud:cloudCount(),local:live().length,pulled:changed,pushed}}catch(e){console.warn(e);syncNote('동기화 확인 실패: '+errMsg(e));return null}}
+async function fullReconcile(){if(!syncOn())return null;try{const docs=await cloud().listRecords(0);const remote=new Map();let changed=0;cloudMap=new Map();for(const x of docs){remote.set(x.id,x);cloudMap.set(x.id,!!x.deleted);lastSeen=Math.max(lastSeen,x.updated||0);if(applyRemote(x))changed++}let pushed=0;for(const r of records){const rem=remote.get(r.id);if(!rem||(r.updated||0)>(rem.updated||0)){pushRecord(r);pushed++}}await pushMissingMedia();if(changed){persist();render();refreshOpenDetail();reloadVisibleMedia()}saveSyncState();renderSyncStatus();return {cloud:cloudCount(),local:live().length,pulled:changed,pushed}}catch(e){console.warn(e);syncNote('동기화 확인 실패: '+errMsg(e));return null}}
 
 /* --- 점검 --- */
 async function syncDiag(){
@@ -774,7 +802,7 @@ async function syncDiag(){
     t=Date.now();try{await withTimeout(new Promise((res,rej)=>{const u=fb.fs.onSnapshot(fb.fs.collection(fb.db,'spaces',code,'records'),{includeMetadataChanges:true},s=>{if(s.metadata.fromCache)return;u();res()},err=>{u();rej(err)})}),10000);say(`SDK 실시간 채널 ✅ (${Date.now()-t}ms)`)}catch(e){say(`SDK 실시간 채널 ❌ ${errMsg(e)}`)}
   }catch(e){say(`SDK 로드 ❌ ${e.message}`)}
   syncCode=saveCode;
-  say(`이 기기 기록: ${live().length}건 · 사진 ${live().flatMap(photosOf).length}장 (클라우드 반영 ${[...new Set(live().flatMap(photosOf))].filter(id=>mediaSynced.has(id)).length}장)`);
+  say(`이 기기 기록: ${live().length}건 · 사진 ${live().flatMap(photosOf).length}장 (클라우드 반영 ${[...new Set(live().flatMap(photosOf))].filter(id=>mediaSynced.has(id)).length}장) · 미전송 ${dirty.size}건 · 마지막 확인 ${lastSeen?new Date(lastSeen).toLocaleString('ko-KR'):'없음'}`);
   say(`상태: ${syncState.status} ${syncState.msg}`);
   if(restOk&&transport!=='rest')say('→ REST가 되므로, SDK가 막힌 기기에서는 연결 시 자동으로 REST 폴링 방식으로 전환됩니다');
 }
