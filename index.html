@@ -611,7 +611,8 @@ $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];i
 const FB_CONFIG={apiKey:"AIzaSyCi79rVhip3GqsKazCTEoqYyyxwA5KwXT4",authDomain:"receits-4e19e.firebaseapp.com",projectId:"receits-4e19e",storageBucket:"receits-4e19e.firebasestorage.app",messagingSenderId:"539797144373",appId:"1:539797144373:web:548f3c8d942493e949827c"};
 const FB_VER='10.12.5', LS_CODE='ledger.syncCode', LS_MODE='ledger.syncMode';
 const MAX_SYNC_BYTES=950*1024; // Firestore 문서 1MiB 제한
-const REST_BASE=`https://firestore.googleapis.com/v1/projects/${FB_CONFIG.projectId}/databases/(default)/documents`;
+const FB_DB_ID='(default)'; // Firestore 데이터베이스 ID (콘솔에서 만든 이름이 (default)가 아니면 여기에 적는다)
+const REST_BASE=`https://firestore.googleapis.com/v1/projects/${FB_CONFIG.projectId}/databases/${encodeURIComponent(FB_DB_ID)}/documents`;
 const POLL_MS=30000;
 let fb=null, fbMods=null, fbAppN=0, fbUnsub=null, pollT=null, session=0, transport=null; // transport: 'sdk' | 'rest'
 let syncCode=localStorage.getItem(LS_CODE)||'', syncMode=localStorage.getItem(LS_MODE)||'auto'; // auto(SDK 먼저) | rest
@@ -625,7 +626,7 @@ function renderSyncStatus(){const d=$('#syncDot'),t=$('#syncText');if(!d)return;
   if(syncState.status==='off'){t.textContent='연결 안 됨 · 이 기기에만 저장';return}
   const cnt=syncState.status==='on'?` · 클라우드 ${cloudCount()}건 · 이 기기 ${live().length}건`:'';
   t.textContent=`${syncState.msg}${cnt}\n코드: ${syncCode}`}
-function errMsg(e){if(e&&/failed to fetch|networkerror|load failed/i.test(e.message||'')&&!e.code)e={code:'unavailable',message:e.message};const c=(e?.code||'').toLowerCase();const m={'permission-denied':'권한 거부 — Firestore 규칙을 확인하세요','unavailable':'서버에 연결할 수 없음 — 인터넷을 확인하세요','not-found':'Firestore 데이터베이스가 아직 없습니다 — 콘솔에서 만들어 주세요','failed-precondition':'Firestore가 준비되지 않았습니다 — 콘솔에서 데이터베이스를 만들어 주세요','resource-exhausted':'무료 사용량 초과 — 내일 다시 시도','invalid-argument':'문서가 너무 큽니다','timeout':'서버 응답 없음 — 통신망이 연결을 막거나 인터넷이 불안정합니다'}[c];return (m||e?.message||String(e))+(c?` (${c})`:'')}
+function errMsg(e){if(e&&/failed to fetch|networkerror|load failed/i.test(e.message||'')&&!e.code)e={code:'unavailable',message:e.message};const c=(e?.code||'').toLowerCase();const m={'permission-denied':'권한 거부 — Firestore 규칙을 확인하세요','unavailable':'서버에 연결할 수 없음 — 인터넷을 확인하세요','not-found':'Firestore가 "없음"이라고 응답 — 데이터베이스 ID가 (default)가 아니거나 아직 만들지 않았습니다','failed-precondition':'Firestore가 준비되지 않았습니다 — 콘솔에서 데이터베이스를 만들어 주세요','resource-exhausted':'무료 사용량 초과 — 내일 다시 시도','invalid-argument':'문서가 너무 큽니다','timeout':'서버 응답 없음 — 통신망이 연결을 막거나 인터넷이 불안정합니다'}[c];return (m||e?.message||String(e))+(c?` (${c})`:'')}
 const withTimeout=(p,ms,label)=>Promise.race([p,new Promise((_,rej)=>setTimeout(()=>rej(Object.assign(new Error(label||'응답 없음'),{code:'timeout'})),ms))]);
 let syncErrT=0;function syncNote(msg){const now=Date.now();if(now-syncErrT<4000)return;syncErrT=now;toast(msg,3500)}
 const clean=o=>JSON.parse(JSON.stringify(o));
@@ -639,7 +640,9 @@ function toFsFields(o){const f={};for(const k in o){if(o[k]!==undefined)f[k]=toF
 function fromFsVal(x){if(!x)return null;if('stringValue' in x)return x.stringValue;if('integerValue' in x)return Number(x.integerValue);if('doubleValue' in x)return x.doubleValue;if('booleanValue' in x)return x.booleanValue;if('nullValue' in x)return null;if('bytesValue' in x)return {__bytes:x.bytesValue};if('arrayValue' in x)return (x.arrayValue.values||[]).map(fromFsVal);if('mapValue' in x)return fromFsFields(x.mapValue.fields||{});if('timestampValue' in x)return x.timestampValue;return null}
 function fromFsFields(f){const o={};for(const k in (f||{}))o[k]=fromFsVal(f[k]);return o}
 const rest={
-  async req(method,path,body){const r=await withTimeout(fetch(`${REST_BASE}/${path}${path.includes('?')?'&':'?'}key=${FB_CONFIG.apiKey}`,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'}),20000);if(r.status===404)return null;const j=await r.json().catch(()=>({}));if(!r.ok){const e=new Error(j.error?.message||r.statusText);e.code=(j.error?.status||('http-'+r.status)).toLowerCase().replace(/_/g,'-');throw e}return j},
+  async req(method,path,body){const r=await withTimeout(fetch(`${REST_BASE}/${path}${path.includes('?')?'&':'?'}key=${FB_CONFIG.apiKey}`,{method,headers:body?{'Content-Type':'application/json'}:undefined,body:body?JSON.stringify(body):undefined,cache:'no-store'}),20000);const j=await r.json().catch(()=>({}));
+    if(r.status===404&&method!=='PATCH'&&/^Document\s+".*"\s+not found/i.test(j.error?.message||''))return null; // 문서만 없음(데이터베이스 없음은 아래에서 오류로)
+    if(!r.ok){const e=new Error(j.error?.message||r.statusText);e.code=(j.error?.status||('http-'+r.status)).toLowerCase().replace(/_/g,'-');throw e}return j},
   async get(col,id){const j=await rest.req('GET',`spaces/${syncCode}/${col}/${encodeURIComponent(id)}`);return j?fromFsFields(j.fields):null},
   async set(col,id,obj){await rest.req('PATCH',`spaces/${syncCode}/${col}/${encodeURIComponent(id)}`,{fields:toFsFields(obj)})},
   async del(col,id){await rest.req('DELETE',`spaces/${syncCode}/${col}/${encodeURIComponent(id)}`)},
@@ -660,7 +663,7 @@ async function loadFirebase(){
   if(fb)return fb;
   if(!fbMods){const base=`https://www.gstatic.com/firebasejs/${FB_VER}/`;const [app,fs]=await Promise.all([import(base+'firebase-app.js'),import(base+'firebase-firestore.js')]);fbMods={app,fs}}
   const {app,fs}=fbMods;const a=app.initializeApp(FB_CONFIG,'ledger'+(fbAppN++));
-  fb={app:a,fs,db:fs.initializeFirestore(a,{experimentalAutoDetectLongPolling:true})};return fb}
+  fb={app:a,fs,db:fs.initializeFirestore(a,{experimentalAutoDetectLongPolling:true},FB_DB_ID)};return fb}
 async function stopSdk(){if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}if(fb){const f=fb;fb=null;try{await f.fs.terminate(f.db)}catch{}try{await fbMods.app.deleteApp(f.app)}catch{}}}
 
 /* --- 연결 --- */
@@ -755,14 +758,14 @@ async function syncDiag(){
   const out=$('#diagOut');out.classList.remove('hidden');const L=[];const say=t=>{L.push(t);out.textContent=L.join('\n')};
   const code=($('#syncCode').value||syncCode||'').trim();
   say(`시각: ${new Date().toLocaleString('ko-KR')}`);say(`온라인: ${navigator.onLine?'예':'아니오'} · 주소: ${location.host||'(로컬)'} · 현재 방식: ${transport==='rest'?'REST 폴링':transport==='sdk'?'SDK 실시간':'미연결'} (설정: ${syncMode==='rest'?'REST 고정':'자동'})`);
-  say(`코드: ${code?code.length+'자':'없음'} ${code.length>=10?'✅':'❌ 10자 이상 필요'}`);
+  say(`코드: ${code?code.length+'자':'없음'} ${code.length>=10?'✅':'❌ 10자 이상 필요'} · 프로젝트 ${FB_CONFIG.projectId} · DB ${FB_DB_ID}`);
   if(code.length<10)return;
   let t=Date.now();
   try{await withTimeout(fetch('https://firestore.googleapis.com/',{mode:'no-cors',cache:'no-store'}),8000);say(`Google 서버 접근 ✅ (${Date.now()-t}ms)`)}catch(e){say(`Google 서버 접근 ❌ ${e.message} — 이 통신망/VPN/차단앱이 Firebase를 막고 있습니다`)}
   // REST
   const saveCode=syncCode;syncCode=code;
   let restOk=false;t=Date.now();
-  try{const docs=await rest.listRecords(0);restOk=true;say(`REST 조회 ✅ 클라우드 기록 ${docs.filter(x=>!x.deleted).length}건 (${Date.now()-t}ms)`)}catch(e){say(`REST 조회 ❌ ${errMsg(e)}`)}
+  try{const docs=await rest.listRecords(0);restOk=true;say(`REST 조회 ✅ 클라우드 기록 ${docs.filter(x=>!x.deleted).length}건 (${Date.now()-t}ms)`)}catch(e){say(`REST 조회 ❌ ${errMsg(e)}`);if(e?.message&&e.code!=='timeout')say(`   서버 메시지: ${e.message}`)}
   if(restOk){t=Date.now();const ref=['diag','ping'];try{await rest.set(...ref,{t:Date.now()});const g=await rest.get(...ref);await rest.del(...ref).catch(()=>{});say(`REST 쓰기/읽기 ${g?'✅':'❌ 읽기 실패'} (${Date.now()-t}ms)`)}catch(e){say(`REST 쓰기 ❌ ${errMsg(e)}`)}}
   // SDK
   t=Date.now();
