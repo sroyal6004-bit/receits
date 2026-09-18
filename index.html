@@ -293,7 +293,9 @@ service cloud.firestore {
       <div class="set-list">
         <button class="btn" id="btnExport">📤 데이터 백업 (JSON)<small>사진 제외 · 가벼움</small></button>
         <button class="btn" id="btnExportFull">🗂 전체 백업 (사진 포함)<small>용량 큼 · 많으면 파일 분할</small></button>
+        <button class="btn" id="btnExportHtml">📄 보기용 HTML 내보내기<small>브라우저로 열기 · 인쇄</small></button>
         <button class="btn" id="btnImport">📥 백업 가져오기<small>병합 · 분할 파일은 하나씩</small></button>
+        <button class="btn" id="btnArchive">🧹 기간 정리 (백업 후 삭제)<small>범위를 먼저 선택</small></button>
         <input type="file" id="importFile" accept="application/json,.json" class="hidden">
       </div>
       <p class="about" id="about"></p>
@@ -605,7 +607,7 @@ $('#vDl').onclick=async()=>{const it=vw.items[vw.i];let blob=it.blob;if(!blob&&i
 
 /* ========== 설정 · 백업 ========== */
 $('#btnSettings').onclick=()=>openLayer('L-settings',()=>{$('#syncCode').value=syncCode;renderSyncStatus();$('#diagOut').classList.add('hidden');fillPeriods();renderUsage();const l=live();$('#about').innerHTML=`기록 장부 v1 · 면세 ${l.filter(r=>r.type==='duty').length}건 · 영수증 ${l.filter(r=>r.type==='receipt').length}건<br>데이터는 이 기기의 브라우저 안에만 저장됩니다. 브라우저 데이터를 지우면 사라지므로 주기적으로 백업해 두세요.<br>홈 화면에 추가하면 앱처럼 쓸 수 있고, 오프라인에서도 동작합니다.`});
-function download(name,text){const b=new Blob([text],{type:'application/json'});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
+function download(name,text,type='application/json'){const b=new Blob([text],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
 function fillPeriods(){const sel=$('#bkPeriod'),cur=sel.value||'all';const years=[...new Set(live().map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
   sel.innerHTML=`<option value="all">전체</option>`+years.map(y=>`<option value="Y:${y}">${y}년 전체</option><option value="H1:${y}">${y}년 상반기 (1~6월)</option><option value="H2:${y}">${y}년 하반기 (7~12월)</option>`).join('');
   sel.value=[...sel.options].some(o=>o.value===cur)?cur:'all'}
@@ -616,18 +618,64 @@ function backupRecords(){const rg=backupRange();return rg.all?records:live().fil
 $('#btnExport').onclick=()=>{const rg=backupRange(),recs=backupRecords();if(!rg.all&&!recs.length){toast('해당 기간에 기록이 없습니다');return}download(`기록장부_백업${rg.label?'_'+rg.label:''}_${today()}.json`,JSON.stringify({app:'ledger',version:1,exported:Date.now(),range:rg.label||'전체',records:recs},null,1));toast(`백업 파일을 내려받습니다 (${rg.label||'전체'} · 기록 ${rg.all?live().length:recs.length}건)`)};
 const b64=blob=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)});
 let BACKUP_CHUNK_BYTES=80*1024*1024; // 파일 하나에 담는 사진 원본 합계(브라우저 메모리 보호)
-$('#btnExportFull').onclick=async()=>{const b=$('#btnExportFull');b.disabled=true;toast('사진을 모으는 중…',4000);try{
-  const rg=backupRange(),recs=backupRecords();if(!rg.all&&!recs.length){toast('해당 기간에 기록이 없습니다');return}
-  const all=await idbAll();const used=new Set((rg.all?live():recs).flatMap(photosOf));const items=all.filter(m=>used.has(m.id)&&m.blob);
+async function exportFull(rg,recs){ // 전체 백업(사진 포함) → {names,bytes,photos,files} 또는 null
+  toast('사진을 모으는 중…',4000);
+  const all=await idbAll();const used=new Set(recs.flatMap(photosOf));const items=all.filter(m=>used.has(m.id)&&m.blob);
   const total=items.reduce((n,m)=>n+m.blob.size,0);const parts=[];let cur=[],curSize=0;
   for(const m of items){if(cur.length&&curSize+m.blob.size>BACKUP_CHUNK_BYTES){parts.push(cur);cur=[];curSize=0}cur.push(m);curSize+=m.blob.size}
   if(cur.length||!parts.length)parts.push(cur);
   if(parts.length>1)toast(`사진 ${items.length}장(${(total/1048576).toFixed(0)}MB)이라 ${parts.length}개 파일로 나눠 저장합니다. 브라우저가 "여러 파일 다운로드 허용"을 물으면 허용해 주세요`,6000);
+  const names=[];
   for(let i=0;i<parts.length;i++){const media=[];for(const m of parts[i]){media.push({id:m.id,blob:await b64(m.blob),thumb:m.thumb?await b64(m.thumb):null})}
-    const base=`기록장부_전체백업${rg.label?'_'+rg.label:''}_${today()}`;const name=parts.length>1?`${base}_${i+1}of${parts.length}.json`:`${base}.json`;
+    const base=`기록장부_전체백업${rg.label?'_'+rg.label:''}_${today()}`;const name=parts.length>1?`${base}_${i+1}of${parts.length}.json`:`${base}.json`;names.push(name);
     download(name,JSON.stringify({app:'ledger',version:1,exported:Date.now(),range:rg.label||'전체',part:i+1,parts:parts.length,records:i===0?recs:[],media}));
     if(i<parts.length-1)await new Promise(r=>setTimeout(r,1200))}
-  toast(`전체 백업 완료 (${rg.label||'전체'} · 사진 ${items.length}장, 파일 ${parts.length}개)`,4000)}catch(e){toast('백업 실패: '+e.message)}finally{b.disabled=false}};
+  return {names,bytes:total,photos:items.length,files:parts.length};
+}
+$('#btnExportFull').onclick=async()=>{const b=$('#btnExportFull');b.disabled=true;try{
+  const rg=backupRange(),recs=rg.all?records:backupRecords();if(!rg.all&&!recs.length){toast('해당 기간에 기록이 없습니다');return}
+  const r=await exportFull(rg,rg.all?live():recs);
+  toast(`전체 백업 완료 (${rg.label||'전체'} · 사진 ${r.photos}장, 파일 ${r.files}개)`,4000)}catch(e){toast('백업 실패: '+e.message)}finally{b.disabled=false}};
+
+/* ---- 기간 정리: 1단계 백업 파일 내려받기 → 파일 확인 → 2단계 삭제 ---- */
+$('#btnArchive').onclick=()=>{
+  const rg=backupRange();if(rg.all){toast('먼저 "백업 범위"에서 정리할 기간(연도·상하반기)을 고르세요',3000);return}
+  const recs=backupRecords();if(!recs.length){toast('해당 기간에 기록이 없습니다');return}
+  const ph=new Set(recs.flatMap(photosOf)).size;
+  actionSheet(`${rg.label} 기록 ${recs.length}건 · 사진 ${ph}장을 전체 백업 파일로 내려받은 뒤, 이 기기와 클라우드에서 삭제합니다. 다른 기기에도 삭제가 전파됩니다.`,[{label:'1단계: 백업 파일 내려받기',fn:()=>archiveStep1(rg,recs)}]);
+};
+async function archiveStep1(rg,recs){const b=$('#btnArchive');b.disabled=true;let r=null;
+  try{r=await exportFull(rg,recs)}catch(e){toast('백업 실패: '+e.message+' — 삭제하지 않았습니다',4000)}finally{b.disabled=false}
+  if(!r)return;
+  setTimeout(()=>actionSheet(`다운로드 폴더에 ${r.names.join(', ')} (사진 ${r.photos}장 · 약 ${fmtMB(r.bytes)}) 파일이 정상적으로 있는지 확인하셨나요? 확인한 뒤에만 삭제하세요. 삭제하면 되돌릴 수 없고, 백업 가져오기로만 복원됩니다.`,[{label:`파일 확인했음 — ${rg.label} ${recs.length}건 삭제`,danger:true,fn:()=>archiveDelete(rg,recs)}]),900)}
+async function archiveDelete(rg,recs){
+  const now=Date.now();let n=0;
+  for(const r of recs){for(const p of photosOf(r)){dropCache(p);try{await idbDel(p)}catch{}deleteRemoteMedia(p)}r.deleted=true;r.updated=now;r.photos=[];pushRecord(r);n++}
+  persist();render();fillPeriods();renderUsage();
+  toast(`${rg.label} 기록 ${n}건을 정리했습니다`+(syncOn()?'':' (클라우드에는 다음 연결 때 반영)'),4000);
+}
+
+/* ---- 보기용 HTML 내보내기 ---- */
+$('#btnExportHtml').onclick=async()=>{const b=$('#btnExportHtml');b.disabled=true;try{
+  const rg=backupRange(),recs=rg.all?live():backupRecords();if(!recs.length){toast('해당 기간에 기록이 없습니다');return}
+  toast('파일을 만드는 중…',4000);
+  const all=await idbAll();const byId=new Map(all.map(m=>[m.id,m]));const ids=[...new Set(recs.flatMap(photosOf))];const embedFull=ids.length<=300;
+  const imgs={};for(const id of ids){const m=byId.get(id);if(!m?.blob&&!m?.thumb)continue;imgs[id]={t:await b64(m.thumb||m.blob),f:embedFull&&m.blob?await b64(m.blob):''}}
+  const byDate=(a,c)=>(c.date||'').localeCompare(a.date||'');
+  const cells=r=>photosOf(r).map((id,i)=>imgs[id]?`<a class="ph" href="#"${imgs[id].f?` data-full="${imgs[id].f}"`:''}><img src="${imgs[id].t}" alt="사진 ${i+1}"></a>`:'').join('');
+  const duty=recs.filter(r=>r.type==='duty').sort(byDate),rc=recs.filter(r=>r.type==='receipt').sort(byDate);
+  const dutyRows=duty.map(r=>`<tr><td class="d">${fmtDate(r.date)}</td><td>${esc(r.name||'')}</td><td>${esc(r.customerNo||'')}</td><td class="pre">${linkify(r.content||'')}</td><td class="p">${cells(r)}</td></tr>`).join('');
+  const rcRows=rc.map(r=>`<tr><td class="d">${fmtDate(r.date)}</td><td>${esc(r.vendor||'기타')}${r.vendor==='기타'&&r.vendorEtc?` · ${esc(r.vendorEtc)}`:''}</td><td class="pre">${linkify(r.memo||'')}</td><td class="p">${cells(r)}</td></tr>`).join('');
+  const title=`기록 장부 — ${rg.label||'전체'}`;
+  const html=`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
+<style>body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;margin:24px;color:#111;background:#fff}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px;padding-bottom:6px;border-bottom:2px solid #333}.meta{color:#666;font-size:13px;margin:0 0 8px}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #ccc;padding:6px 8px;vertical-align:top;text-align:left}th{background:#f2f2f2}td.d{white-space:nowrap}td.pre{white-space:pre-wrap;min-width:180px}td.p{white-space:nowrap}a.ph{display:inline-block;margin:2px}a.ph img{width:110px;height:110px;object-fit:cover;border-radius:6px;border:1px solid #ddd}#lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);align-items:center;justify-content:center;cursor:zoom-out;z-index:9}#lb img{max-width:96vw;max-height:96vh}tr{page-break-inside:avoid}@media print{body{margin:8mm}a.ph img{width:70px;height:70px}#lb{display:none!important}h2{page-break-before:auto}}</style></head>
+<body><h1>${esc(title)}</h1><p class="meta">내보낸 시각 ${new Date().toLocaleString('ko-KR')} · 면세 ${duty.length}건 · 영수증 ${rc.length}건 · 사진 ${ids.length}장${embedFull?'':' (사진 300장 초과라 작은 크기로만 포함)'} · 사진을 누르면 크게 보입니다</p>
+<h2>면세 기록 장부 (${duty.length}건)</h2>${duty.length?`<table><thead><tr><th>상담날짜</th><th>이름</th><th>고객번호</th><th>진료내용</th><th>사진</th></tr></thead><tbody>${dutyRows}</tbody></table>`:'<p class="meta">기록 없음</p>'}
+<h2>영수증 기록 장부 (${rc.length}건)</h2>${rc.length?`<table><thead><tr><th>주문날짜</th><th>주문처</th><th>메모</th><th>사진</th></tr></thead><tbody>${rcRows}</tbody></table>`:'<p class="meta">기록 없음</p>'}
+<div id="lb"><img alt=""></div>
+<script>document.addEventListener('click',function(e){var a=e.target.closest('a.ph');var lb=document.getElementById('lb');if(a){e.preventDefault();var f=a.getAttribute('data-full')||a.querySelector('img').src;lb.querySelector('img').src=f;lb.style.display='flex'}else if(e.target.closest('#lb')){lb.style.display='none'}});document.addEventListener('keydown',function(e){if(e.key==='Escape')document.getElementById('lb').style.display='none'});<\/script></body></html>`;
+  download(`기록장부_보기용${rg.label?'_'+rg.label:''}_${today()}.html`,html,'text/html');
+  toast(`보기용 HTML 저장 (${rg.label||'전체'} · 기록 ${recs.length}건 · 사진 ${ids.length}장). 더블클릭하면 브라우저에서 열립니다`,4000)}catch(e){toast('내보내기 실패: '+e.message)}finally{b.disabled=false}};
 $('#btnImport').onclick=()=>{$('#importFile').value='';$('#importFile').click()};
 $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!d||d.app!=='ledger'||!Array.isArray(d.records))throw new Error('이 앱의 백업 파일이 아닙니다');
   let n=0;for(const r of d.records){if(!r?.id)continue;const cur=records.find(x=>x.id===r.id);if(!cur){records.push(r);n++;markDirty(r.id)}else if((r.updated||0)>(cur.updated||0)){Object.assign(cur,r);n++;markDirty(r.id)}}
@@ -648,6 +696,7 @@ let syncCode=localStorage.getItem(LS_CODE)||'', syncMode=localStorage.getItem(LS
 let syncState={status:'off',msg:''}, mediaSynced=new Set(), cloudMap=new Map(), lastSeen=0;
 function loadSynced(){try{mediaSynced=new Set(JSON.parse(localStorage.getItem('ledger.mediaSynced:'+syncCode)||'[]'))}catch{mediaSynced=new Set()}
   try{dirty=new Set(JSON.parse(localStorage.getItem('ledger.dirty:'+syncCode)||'[]'))}catch{dirty=new Set()}
+  try{pendingDel=new Set(JSON.parse(localStorage.getItem('ledger.mediaDel:'+syncCode)||'[]'))}catch{pendingDel=new Set()}
   try{lastSeen=Number(localStorage.getItem('ledger.lastSeen:'+syncCode)||0)}catch{lastSeen=0}
   try{cloudMap=new Map(JSON.parse(localStorage.getItem('ledger.cloudMap:'+syncCode)||'[]'))}catch{cloudMap=new Map()}}
 let dirty=new Set();
@@ -760,7 +809,7 @@ async function pollOnce(){
 document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'&&transport==='rest')pollOnce()});
 window.addEventListener('focus',()=>{if(transport==='rest')pollOnce()});
 window.addEventListener('online',()=>{if(!syncCode)return;if(!syncOn())connectSync(syncCode);else if(transport==='rest')pollOnce();else fullReconcile()});
-function disconnectSync(silent){session++;clearTimeout(pollT);pollT=null;if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}transport=null;if(!silent){for(const k of ['dirty','lastSeen','cloudMap'])localStorage.removeItem('ledger.'+k+':'+syncCode);syncCode='';localStorage.removeItem(LS_CODE);localStorage.removeItem(LS_MODE);syncMode='auto';mediaSynced=new Set();cloudMap=new Map();dirty=new Set();lastSeen=0;stopSdk();setSync('off','')}}
+function disconnectSync(silent){session++;clearTimeout(pollT);pollT=null;if(fbUnsub){try{fbUnsub()}catch{}fbUnsub=null}transport=null;if(!silent){for(const k of ['dirty','lastSeen','cloudMap','mediaDel'])localStorage.removeItem('ledger.'+k+':'+syncCode);pendingDel=new Set();syncCode='';localStorage.removeItem(LS_CODE);localStorage.removeItem(LS_MODE);syncMode='auto';mediaSynced=new Set();cloudMap=new Map();dirty=new Set();lastSeen=0;stopSdk();setSync('off','')}}
 
 /* --- 병합 / 송수신 --- */
 function applyRemote(rem){
@@ -775,7 +824,7 @@ function applyRemote(rem){
   return false;
 }
 function pushRecord(r){markDirty(r.id);if(!syncOn())return;const upd=r.updated||0;cloud().set('records',r.id,clean(r)).then(()=>{cloudMap.set(r.id,!!r.deleted);lastSeen=Math.max(lastSeen,upd);if((r.updated||0)===upd)clearDirty(r.id);saveSyncState();renderSyncStatus()}).catch(e=>{console.warn(e);syncNote('클라우드 저장 실패: '+errMsg(e))})}
-function pushDirty(){for(const id of [...dirty]){const r=records.find(x=>x.id===id);if(r)pushRecord(r);else clearDirty(id)}}
+function pushDirty(){for(const id of [...dirty]){const r=records.find(x=>x.id===id);if(r)pushRecord(r);else clearDirty(id)}if(pendingDel.size&&syncOn())flushPendingDel()}
 function pushLocalNewer(remote){for(const r of records){const rem=remote.get(r.id);if(!rem||(r.updated||0)>(rem.updated||0))pushRecord(r)}}
 async function pushMissingMedia(){if(!syncOn())return;const ids=[...new Set(live().flatMap(photosOf))].filter(id=>!mediaSynced.has(id));for(const id of ids){if(!syncOn())return;try{const m=await cloud().get('media',id);if(m){markSynced(id);continue}}catch(e){console.warn(e);return}await uploadMedia(id)}}
 async function uploadMedia(id){
@@ -787,7 +836,10 @@ async function uploadMedia(id){
     markSynced(id);
   }catch(e){console.warn(e);syncNote('사진 업로드 실패: '+errMsg(e))}
 }
-function deleteRemoteMedia(id){if(!syncOn())return;cloud().del('media',id).catch(()=>{});cloud().del('blobs',id).catch(()=>{})}
+let pendingDel=new Set();
+function savePendingDel(){try{localStorage.setItem('ledger.mediaDel:'+syncCode,JSON.stringify([...pendingDel]))}catch{}}
+function deleteRemoteMedia(id){if(!syncCode)return;pendingDel.add(id);savePendingDel();if(!syncOn())return;Promise.all([cloud().del('media',id),cloud().del('blobs',id)]).then(()=>{pendingDel.delete(id);savePendingDel()}).catch(e=>console.warn(e))}
+function flushPendingDel(){for(const id of [...pendingDel])deleteRemoteMedia(id)}
 const pulling=new Map();
 function pullMedia(id,kind,rec){const k=id+':'+kind;if(pulling.has(k))return pulling.get(k);const p=(async()=>{try{
     if(kind==='t'){const m=await cloud().get('media',id);if(!m?.t?.__bytes)return null;const thumb=new Blob([await b64dec(m.t.__bytes)],{type:'image/jpeg'});await idbPut({...(rec||{}),id,thumb});markSynced(id);return thumb}
