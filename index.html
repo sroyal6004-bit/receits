@@ -289,7 +289,8 @@ service cloud.firestore {
       <label class="lbl">저장 공간</label>
       <div class="sync" id="usageBox"><div class="hint" id="usageText">확인 중…</div><div class="bar"><div class="fill" id="usageFill"></div></div><div class="hint" id="usageHint"></div></div>
       <label class="lbl">백업</label>
-      <div class="fld"><label class="lbl" for="bkPeriod">백업 범위</label><select id="bkPeriod"><option value="all">전체</option></select></div>
+      <div class="row"><div><label class="lbl" for="bkBook">장부</label><select id="bkBook"><option value="duty">면세 기록 장부</option><option value="receipt">영수증 기록 장부</option><option value="both">두 장부 모두</option></select></div><div><label class="lbl" for="bkPeriod">기간</label><select id="bkPeriod"><option value="all">전체</option></select></div></div>
+      <p class="hint" style="margin:-4px 0 10px">아래 백업·내보내기·정리는 모두 이 장부·기간 선택을 따릅니다.</p>
       <div class="set-list">
         <button class="btn" id="btnExport">📤 데이터 백업 (JSON)<small>사진 제외 · 가벼움</small></button>
         <button class="btn" id="btnExportFull">🗂 전체 백업 (사진 포함)<small>용량 큼 · 많으면 파일 분할</small></button>
@@ -606,16 +607,21 @@ $('#vDl').onclick=async()=>{const it=vw.items[vw.i];let blob=it.blob;if(!blob&&i
 })();
 
 /* ========== 설정 · 백업 ========== */
-$('#btnSettings').onclick=()=>openLayer('L-settings',()=>{$('#syncCode').value=syncCode;renderSyncStatus();$('#diagOut').classList.add('hidden');fillPeriods();renderUsage();const l=live();$('#about').innerHTML=`기록 장부 v1 · 면세 ${l.filter(r=>r.type==='duty').length}건 · 영수증 ${l.filter(r=>r.type==='receipt').length}건<br>데이터는 이 기기의 브라우저 안에만 저장됩니다. 브라우저 데이터를 지우면 사라지므로 주기적으로 백업해 두세요.<br>홈 화면에 추가하면 앱처럼 쓸 수 있고, 오프라인에서도 동작합니다.`});
+$('#btnSettings').onclick=()=>openLayer('L-settings',()=>{$('#syncCode').value=syncCode;renderSyncStatus();$('#diagOut').classList.add('hidden');$('#bkBook').value=tab;fillPeriods();renderUsage();const l=live();$('#about').innerHTML=`기록 장부 v1 · 면세 ${l.filter(r=>r.type==='duty').length}건 · 영수증 ${l.filter(r=>r.type==='receipt').length}건<br>데이터는 이 기기의 브라우저 안에만 저장됩니다. 브라우저 데이터를 지우면 사라지므로 주기적으로 백업해 두세요.<br>홈 화면에 추가하면 앱처럼 쓸 수 있고, 오프라인에서도 동작합니다.`});
 function download(name,text,type='application/json'){const b=new Blob([text],{type});const u=URL.createObjectURL(b);const a=document.createElement('a');a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),3000)}
-function fillPeriods(){const sel=$('#bkPeriod'),cur=sel.value||'all';const years=[...new Set(live().map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
-  sel.innerHTML=`<option value="all">전체</option>`+years.map(y=>`<option value="Y:${y}">${y}년 전체</option><option value="H1:${y}">${y}년 상반기 (1~6월)</option><option value="H2:${y}">${y}년 하반기 (7~12월)</option>`).join('');
+const BOOK_LABEL={duty:'면세',receipt:'영수증',both:'전체장부'};
+function bookOf(){return $('#bkBook').value||'duty'}
+function bookRecords(includeDeleted){const bk=bookOf();return (includeDeleted?records:live()).filter(r=>bk==='both'||r.type===bk)}
+function fillPeriods(){const sel=$('#bkPeriod'),cur=sel.value||'all';const years=[...new Set(bookRecords(false).map(r=>(r.date||'').slice(0,4)).filter(y=>/^\d{4}$/.test(y)))].sort().reverse();
+  sel.innerHTML=`<option value="all">전체 기간</option>`+years.map(y=>`<option value="Y:${y}">${y}년 전체</option><option value="H1:${y}">${y}년 상반기 (1~6월)</option><option value="H2:${y}">${y}년 하반기 (7~12월)</option>`).join('');
   sel.value=[...sel.options].some(o=>o.value===cur)?cur:'all'}
-function backupRange(){const v=$('#bkPeriod').value||'all';if(v==='all')return {all:true,label:'',test:()=>true};const [k,y]=v.split(':');
+$('#bkBook').onchange=fillPeriods;
+function backupRange(){const v=$('#bkPeriod').value||'all';const bk=BOOK_LABEL[bookOf()];
+  if(v==='all')return {all:true,label:bk,period:'전체 기간',test:()=>true};const [k,y]=v.split(':');
   const test=d=>{if(!d||d.slice(0,4)!==y)return false;const m=+d.slice(5,7);return k==='Y'||(k==='H1'?m<=6:m>=7)};
-  return {all:false,label:k==='Y'?`${y}년`:`${y}년${k==='H1'?'상반기':'하반기'}`,test}}
-function backupRecords(){const rg=backupRange();return rg.all?records:live().filter(r=>rg.test(r.date))}
-$('#btnExport').onclick=()=>{const rg=backupRange(),recs=backupRecords();if(!rg.all&&!recs.length){toast('해당 기간에 기록이 없습니다');return}download(`기록장부_백업${rg.label?'_'+rg.label:''}_${today()}.json`,JSON.stringify({app:'ledger',version:1,exported:Date.now(),range:rg.label||'전체',records:recs},null,1));toast(`백업 파일을 내려받습니다 (${rg.label||'전체'} · 기록 ${rg.all?live().length:recs.length}건)`)};
+  const period=k==='Y'?`${y}년`:`${y}년${k==='H1'?'상반기':'하반기'}`;return {all:false,label:`${bk}_${period}`,period,test}}
+function backupRecords(includeDeleted){const rg=backupRange();return bookRecords(includeDeleted&&rg.all).filter(r=>r.deleted||rg.test(r.date))}
+$('#btnExport').onclick=()=>{const rg=backupRange(),recs=backupRecords(true);if(!recs.some(r=>!r.deleted)){toast('해당 장부·기간에 기록이 없습니다');return}download(`기록장부_백업_${rg.label}_${today()}.json`,JSON.stringify({app:'ledger',version:1,exported:Date.now(),book:bookOf(),range:rg.period,records:recs},null,1));toast(`백업 파일을 내려받습니다 (${rg.label} · 기록 ${recs.filter(r=>!r.deleted).length}건)`)};
 const b64=blob=>new Promise(r=>{const fr=new FileReader();fr.onload=()=>r(fr.result);fr.readAsDataURL(blob)});
 let BACKUP_CHUNK_BYTES=80*1024*1024; // 파일 하나에 담는 사진 원본 합계(브라우저 메모리 보호)
 async function exportFull(rg,recs){ // 전체 백업(사진 포함) → {names,bytes,photos,files} 또는 null
@@ -627,55 +633,61 @@ async function exportFull(rg,recs){ // 전체 백업(사진 포함) → {names,b
   if(parts.length>1)toast(`사진 ${items.length}장(${(total/1048576).toFixed(0)}MB)이라 ${parts.length}개 파일로 나눠 저장합니다. 브라우저가 "여러 파일 다운로드 허용"을 물으면 허용해 주세요`,6000);
   const names=[];
   for(let i=0;i<parts.length;i++){const media=[];for(const m of parts[i]){media.push({id:m.id,blob:await b64(m.blob),thumb:m.thumb?await b64(m.thumb):null})}
-    const base=`기록장부_전체백업${rg.label?'_'+rg.label:''}_${today()}`;const name=parts.length>1?`${base}_${i+1}of${parts.length}.json`:`${base}.json`;names.push(name);
-    download(name,JSON.stringify({app:'ledger',version:1,exported:Date.now(),range:rg.label||'전체',part:i+1,parts:parts.length,records:i===0?recs:[],media}));
+    const base=`기록장부_전체백업_${rg.label}_${today()}`;const name=parts.length>1?`${base}_${i+1}of${parts.length}.json`:`${base}.json`;names.push(name);
+    download(name,JSON.stringify({app:'ledger',version:1,exported:Date.now(),book:bookOf(),range:rg.period,part:i+1,parts:parts.length,records:i===0?recs:[],media}));
     if(i<parts.length-1)await new Promise(r=>setTimeout(r,1200))}
   return {names,bytes:total,photos:items.length,files:parts.length};
 }
 $('#btnExportFull').onclick=async()=>{const b=$('#btnExportFull');b.disabled=true;try{
-  const rg=backupRange(),recs=rg.all?records:backupRecords();if(!rg.all&&!recs.length){toast('해당 기간에 기록이 없습니다');return}
-  const r=await exportFull(rg,rg.all?live():recs);
-  toast(`전체 백업 완료 (${rg.label||'전체'} · 사진 ${r.photos}장, 파일 ${r.files}개)`,4000)}catch(e){toast('백업 실패: '+e.message)}finally{b.disabled=false}};
+  const rg=backupRange(),recs=backupRecords(false);if(!recs.length){toast('해당 장부·기간에 기록이 없습니다');return}
+  const r=await exportFull(rg,recs);
+  toast(`전체 백업 완료 (${rg.label} · 사진 ${r.photos}장, 파일 ${r.files}개)`,4000)}catch(e){toast('백업 실패: '+e.message)}finally{b.disabled=false}};
 
 /* ---- 기간 정리: 1단계 백업 파일 내려받기 → 파일 확인 → 2단계 삭제 ---- */
 $('#btnArchive').onclick=()=>{
-  const rg=backupRange();if(rg.all){toast('먼저 "백업 범위"에서 정리할 기간(연도·상하반기)을 고르세요',3000);return}
-  const recs=backupRecords();if(!recs.length){toast('해당 기간에 기록이 없습니다');return}
+  const rg=backupRange();if(rg.all&&bookOf()==='both'){toast('두 장부 전체를 한 번에 정리할 수는 없습니다. 장부나 기간을 골라 주세요',3500);return}
+  const recs=backupRecords(false);if(!recs.length){toast('해당 장부·기간에 기록이 없습니다');return}
   const ph=new Set(recs.flatMap(photosOf)).size;
-  actionSheet(`${rg.label} 기록 ${recs.length}건 · 사진 ${ph}장을 전체 백업 파일로 내려받은 뒤, 이 기기와 클라우드에서 삭제합니다. 다른 기기에도 삭제가 전파됩니다.`,[{label:'1단계: 백업 파일 내려받기',fn:()=>archiveStep1(rg,recs)}]);
+  actionSheet(`${BOOK_LABEL[bookOf()]} ${rg.period} 기록 ${recs.length}건 · 사진 ${ph}장을 전체 백업 파일로 내려받은 뒤, 이 기기와 클라우드에서 삭제합니다. 다른 기기에도 삭제가 전파됩니다.`,[{label:'1단계: 백업 파일 내려받기',fn:()=>archiveStep1(rg,recs)}]);
 };
 async function archiveStep1(rg,recs){const b=$('#btnArchive');b.disabled=true;let r=null;
   try{r=await exportFull(rg,recs)}catch(e){toast('백업 실패: '+e.message+' — 삭제하지 않았습니다',4000)}finally{b.disabled=false}
   if(!r)return;
-  setTimeout(()=>actionSheet(`다운로드 폴더에 ${r.names.join(', ')} (사진 ${r.photos}장 · 약 ${fmtMB(r.bytes)}) 파일이 정상적으로 있는지 확인하셨나요? 확인한 뒤에만 삭제하세요. 삭제하면 되돌릴 수 없고, 백업 가져오기로만 복원됩니다.`,[{label:`파일 확인했음 — ${rg.label} ${recs.length}건 삭제`,danger:true,fn:()=>archiveDelete(rg,recs)}]),900)}
+  setTimeout(()=>actionSheet(`다운로드 폴더에 ${r.names.join(', ')} (사진 ${r.photos}장 · 약 ${fmtMB(r.bytes)}) 파일이 정상적으로 있는지 확인하셨나요? 확인한 뒤에만 삭제하세요. 삭제하면 되돌릴 수 없고, 백업 가져오기로만 복원됩니다.`,[{label:`파일 확인했음 — ${recs.length}건 삭제`,danger:true,fn:()=>archiveDelete(rg,recs)}]),900)}
 async function archiveDelete(rg,recs){
   const now=Date.now();let n=0;
   for(const r of recs){for(const p of photosOf(r)){dropCache(p);try{await idbDel(p)}catch{}deleteRemoteMedia(p)}r.deleted=true;r.updated=now;r.photos=[];pushRecord(r);n++}
   persist();render();fillPeriods();renderUsage();
-  toast(`${rg.label} 기록 ${n}건을 정리했습니다`+(syncOn()?'':' (클라우드에는 다음 연결 때 반영)'),4000);
+  toast(`${BOOK_LABEL[bookOf()]} ${rg.period} 기록 ${n}건을 정리했습니다`+(syncOn()?'':' (클라우드에는 다음 연결 때 반영)'),4000);
 }
 
 /* ---- 보기용 HTML 내보내기 ---- */
 $('#btnExportHtml').onclick=async()=>{const b=$('#btnExportHtml');b.disabled=true;try{
-  const rg=backupRange(),recs=rg.all?live():backupRecords();if(!recs.length){toast('해당 기간에 기록이 없습니다');return}
+  const rg=backupRange(),recs=backupRecords(false);if(!recs.length){toast('해당 장부·기간에 기록이 없습니다');return}
   toast('파일을 만드는 중…',4000);
   const all=await idbAll();const byId=new Map(all.map(m=>[m.id,m]));const ids=[...new Set(recs.flatMap(photosOf))];const embedFull=ids.length<=300;
   const imgs={};for(const id of ids){const m=byId.get(id);if(!m?.blob&&!m?.thumb)continue;imgs[id]={t:await b64(m.thumb||m.blob),f:embedFull&&m.blob?await b64(m.blob):''}}
-  const byDate=(a,c)=>(c.date||'').localeCompare(a.date||'');
-  const cells=r=>photosOf(r).map((id,i)=>imgs[id]?`<a class="ph" href="#"${imgs[id].f?` data-full="${imgs[id].f}"`:''}><img src="${imgs[id].t}" alt="사진 ${i+1}"></a>`:'').join('');
-  const duty=recs.filter(r=>r.type==='duty').sort(byDate),rc=recs.filter(r=>r.type==='receipt').sort(byDate);
-  const dutyRows=duty.map(r=>`<tr><td class="d">${fmtDate(r.date)}</td><td>${esc(r.name||'')}</td><td>${esc(r.customerNo||'')}</td><td class="pre">${linkify(r.content||'')}</td><td class="p">${cells(r)}</td></tr>`).join('');
-  const rcRows=rc.map(r=>`<tr><td class="d">${fmtDate(r.date)}</td><td>${esc(r.vendor||'기타')}${r.vendor==='기타'&&r.vendorEtc?` · ${esc(r.vendorEtc)}`:''}</td><td class="pre">${linkify(r.memo||'')}</td><td class="p">${cells(r)}</td></tr>`).join('');
-  const title=`기록 장부 — ${rg.label||'전체'}`;
+  const byDate=(a,c)=>(c.date||'').localeCompare(a.date||'')||(c.updated||0)-(a.updated||0);
+  const photos=r=>{const ph=photosOf(r).filter(id=>imgs[id]);return ph.length?`<div class="photos">${ph.map((id,i)=>`<a class="ph" href="#"${imgs[id].f?` data-full="${imgs[id].f}"`:''}><img src="${imgs[id].f||imgs[id].t}" alt="사진 ${i+1}"><span>사진 ${i+1}</span></a>`).join('')}</div>`:''};
+  const dutyCard=r=>`<article class="rec"><div class="hd"><span class="date">${fmtDate(r.date)}</span><b>${esc(r.name||'(이름 없음)')}</b>${r.customerNo?`<span class="tag">고객번호 ${esc(r.customerNo)}</span>`:''}</div>${r.content?`<div class="txt">${linkify(r.content)}</div>`:''}${photos(r)}</article>`;
+  const rcCard=r=>`<article class="rec"><div class="hd"><span class="date">${fmtDate(r.date)}</span><b>${esc(r.vendor||'기타')}${r.vendor==='기타'&&r.vendorEtc?` · ${esc(r.vendorEtc)}`:''}</b></div>${r.memo?`<div class="txt">${linkify(r.memo)}</div>`:''}${photos(r)}</article>`;
+  const bk=bookOf();const duty=bk==='receipt'?[]:recs.filter(r=>r.type==='duty').sort(byDate),rc=bk==='duty'?[]:recs.filter(r=>r.type==='receipt').sort(byDate);
+  const title=`${bk==='both'?'기록 장부':BOOK_LABEL[bk]+' 기록 장부'} — ${rg.period}`;
+  const section=(name,list,card)=>`<h2>${name} (${list.length}건)</h2>${list.length?list.map(card).join(''):'<p class="meta">기록 없음</p>'}`;
   const html=`<!DOCTYPE html><html lang="ko"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(title)}</title>
-<style>body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;margin:24px;color:#111;background:#fff}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px;padding-bottom:6px;border-bottom:2px solid #333}.meta{color:#666;font-size:13px;margin:0 0 8px}table{border-collapse:collapse;width:100%;font-size:14px}th,td{border:1px solid #ccc;padding:6px 8px;vertical-align:top;text-align:left}th{background:#f2f2f2}td.d{white-space:nowrap}td.pre{white-space:pre-wrap;min-width:180px}td.p{white-space:nowrap}a.ph{display:inline-block;margin:2px}a.ph img{width:110px;height:110px;object-fit:cover;border-radius:6px;border:1px solid #ddd}#lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.9);align-items:center;justify-content:center;cursor:zoom-out;z-index:9}#lb img{max-width:96vw;max-height:96vh}tr{page-break-inside:avoid}@media print{body{margin:8mm}a.ph img{width:70px;height:70px}#lb{display:none!important}h2{page-break-before:auto}}</style></head>
-<body><h1>${esc(title)}</h1><p class="meta">내보낸 시각 ${new Date().toLocaleString('ko-KR')} · 면세 ${duty.length}건 · 영수증 ${rc.length}건 · 사진 ${ids.length}장${embedFull?'':' (사진 300장 초과라 작은 크기로만 포함)'} · 사진을 누르면 크게 보입니다</p>
-<h2>면세 기록 장부 (${duty.length}건)</h2>${duty.length?`<table><thead><tr><th>상담날짜</th><th>이름</th><th>고객번호</th><th>진료내용</th><th>사진</th></tr></thead><tbody>${dutyRows}</tbody></table>`:'<p class="meta">기록 없음</p>'}
-<h2>영수증 기록 장부 (${rc.length}건)</h2>${rc.length?`<table><thead><tr><th>주문날짜</th><th>주문처</th><th>메모</th><th>사진</th></tr></thead><tbody>${rcRows}</tbody></table>`:'<p class="meta">기록 없음</p>'}
+<style>:root{--ph:280px}body{font-family:-apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif;margin:0;padding:20px;color:#111;background:#fff;max-width:1100px;margin:0 auto}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 10px;padding-bottom:6px;border-bottom:2px solid #333}.meta{color:#666;font-size:13px;margin:0 0 8px}
+.tools{position:sticky;top:0;background:#fff;padding:8px 0;border-bottom:1px solid #ddd;margin-bottom:8px;font-size:13px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}.tools button{font:inherit;padding:5px 10px;border:1px solid #bbb;background:#f7f7f7;border-radius:6px;cursor:pointer}.tools button.on{background:#333;color:#fff;border-color:#333}
+.rec{border:1px solid #ccc;border-radius:10px;padding:12px 14px;margin:0 0 12px;page-break-inside:avoid;break-inside:avoid}.hd{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:15px}.hd .date{color:#555;font-variant-numeric:tabular-nums}.hd b{font-size:17px}.tag{color:#666;font-size:13px}
+.txt{white-space:pre-wrap;line-height:1.55;margin:8px 0 0;font-size:15px}.photos{display:flex;gap:10px;flex-wrap:wrap;margin-top:10px}a.ph{display:inline-block;text-decoration:none;color:#666;font-size:12px;text-align:center}a.ph img{display:block;height:var(--ph);max-width:100%;width:auto;object-fit:contain;border:1px solid #ddd;border-radius:6px;background:#fafafa}
+#lb{display:none;position:fixed;inset:0;background:rgba(0,0,0,.92);align-items:center;justify-content:center;cursor:zoom-out;z-index:9}#lb img{max-width:98vw;max-height:98vh}
+@media print{body{padding:0}.tools{display:none}#lb{display:none!important}a.ph img{height:min(var(--ph),90mm)}.rec{border-color:#999}}</style></head>
+<body><h1>${esc(title)}</h1><p class="meta">내보낸 시각 ${new Date().toLocaleString('ko-KR')} · 면세 ${duty.length}건 · 영수증 ${rc.length}건 · 사진 ${ids.length}장${embedFull?'':' (사진 300장 초과라 작은 크기로만 포함)'}</p>
+<div class="tools">사진 크기 <button data-s="160">작게</button><button data-s="280" class="on">보통</button><button data-s="480">크게</button><button data-s="800">아주 크게</button> <span style="margin-left:auto">사진을 누르면 화면 가득 보입니다</span> <button onclick="window.print()">인쇄 / PDF 저장</button></div>
+${bk==='receipt'?'':section('면세 기록 장부',duty,dutyCard)}${bk==='duty'?'':section('영수증 기록 장부',rc,rcCard)}
 <div id="lb"><img alt=""></div>
-<script>document.addEventListener('click',function(e){var a=e.target.closest('a.ph');var lb=document.getElementById('lb');if(a){e.preventDefault();var f=a.getAttribute('data-full')||a.querySelector('img').src;lb.querySelector('img').src=f;lb.style.display='flex'}else if(e.target.closest('#lb')){lb.style.display='none'}});document.addEventListener('keydown',function(e){if(e.key==='Escape')document.getElementById('lb').style.display='none'});<\/script></body></html>`;
-  download(`기록장부_보기용${rg.label?'_'+rg.label:''}_${today()}.html`,html,'text/html');
-  toast(`보기용 HTML 저장 (${rg.label||'전체'} · 기록 ${recs.length}건 · 사진 ${ids.length}장). 더블클릭하면 브라우저에서 열립니다`,4000)}catch(e){toast('내보내기 실패: '+e.message)}finally{b.disabled=false}};
+<script>document.addEventListener('click',function(e){var lb=document.getElementById('lb');var s=e.target.closest('button[data-s]');if(s){document.documentElement.style.setProperty('--ph',s.getAttribute('data-s')+'px');document.querySelectorAll('button[data-s]').forEach(function(x){x.classList.toggle('on',x===s)});return}var a=e.target.closest('a.ph');if(a){e.preventDefault();lb.querySelector('img').src=a.getAttribute('data-full')||a.querySelector('img').src;lb.style.display='flex'}else if(e.target.closest('#lb')){lb.style.display='none'}});document.addEventListener('keydown',function(e){if(e.key==='Escape')document.getElementById('lb').style.display='none'});<\/script></body></html>`;
+  download(`기록장부_보기용_${rg.label}_${today()}.html`,html,'text/html');
+  toast(`보기용 HTML 저장 (${rg.label} · 기록 ${recs.length}건 · 사진 ${ids.length}장). 더블클릭하면 브라우저에서 열립니다`,4000)}catch(e){toast('내보내기 실패: '+e.message)}finally{b.disabled=false}};
 $('#btnImport').onclick=()=>{$('#importFile').value='';$('#importFile').click()};
 $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];if(!f)return;try{const d=JSON.parse(await f.text());if(!d||d.app!=='ledger'||!Array.isArray(d.records))throw new Error('이 앱의 백업 파일이 아닙니다');
   let n=0;for(const r of d.records){if(!r?.id)continue;const cur=records.find(x=>x.id===r.id);if(!cur){records.push(r);n++;markDirty(r.id)}else if((r.updated||0)>(cur.updated||0)){Object.assign(cur,r);n++;markDirty(r.id)}}
