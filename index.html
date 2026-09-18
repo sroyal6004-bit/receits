@@ -269,8 +269,8 @@ details.guide pre{background:var(--bg2);border:1px solid var(--line);border-radi
         <details class="guide"><summary>처음 한 번: Firebase 콘솔 설정 방법</summary>
           <ol>
             <li><a href="https://console.firebase.google.com/project/receits-4e19e/firestore" target="_blank" rel="noopener">Firebase 콘솔 → receits 프로젝트 → 빌드 → Firestore Database</a></li>
-            <li><b>데이터베이스 만들기</b> → 위치 <code>asia-northeast3 (서울)</code> → <b>프로덕션 모드</b> → 만들기</li>
-            <li>위쪽 <b>규칙</b> 탭 → 내용을 전부 지우고 아래를 붙여넣기 → <b>게시</b></li>
+            <li><b>데이터베이스 만들기</b> → 데이터베이스 ID <code>default</code> → 위치 <code>asia-northeast3 (서울)</code> → <b>프로덕션 모드</b> → 만들기</li>
+            <li>위쪽 <b>규칙</b>(또는 <b>보안</b>) 탭 → 내용을 전부 지우고 아래를 붙여넣기 → <b>게시</b></li>
           </ol>
 <pre>rules_version = '2';
 service cloud.firestore {
@@ -611,7 +611,7 @@ $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];i
 const FB_CONFIG={apiKey:"AIzaSyCi79rVhip3GqsKazCTEoqYyyxwA5KwXT4",authDomain:"receits-4e19e.firebaseapp.com",projectId:"receits-4e19e",storageBucket:"receits-4e19e.firebasestorage.app",messagingSenderId:"539797144373",appId:"1:539797144373:web:548f3c8d942493e949827c"};
 const FB_VER='10.12.5', LS_CODE='ledger.syncCode', LS_MODE='ledger.syncMode';
 const MAX_SYNC_BYTES=950*1024; // Firestore 문서 1MiB 제한
-const FB_DB_ID='(default)'; // Firestore 데이터베이스 ID (콘솔에서 만든 이름이 (default)가 아니면 여기에 적는다)
+const FB_DB_ID='default'; // Firestore 데이터베이스 ID — 이 프로젝트는 콘솔에서 "default"(괄호 없음)로 만들어졌다
 const REST_BASE=`https://firestore.googleapis.com/v1/projects/${FB_CONFIG.projectId}/databases/${encodeURIComponent(FB_DB_ID)}/documents`;
 const POLL_MS=30000;
 let fb=null, fbMods=null, fbAppN=0, fbUnsub=null, pollT=null, session=0, transport=null; // transport: 'sdk' | 'rest'
