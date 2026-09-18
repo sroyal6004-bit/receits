@@ -609,7 +609,7 @@ $('#importFile').addEventListener('change',async e=>{const f=e.target.files[0];i
 // 사진도 Firestore 문서의 바이트 필드로 저장 → Storage(유료 요금제 필요)·CORS 설정 없이 동작
 // 전송 방식 2가지: SDK(실시간 채널) / REST(일반 HTTPS 요청 + 30초 폴링). 실시간 채널을 막는 통신망에서는 REST로 자동 전환
 const FB_CONFIG={apiKey:"AIzaSyCi79rVhip3GqsKazCTEoqYyyxwA5KwXT4",authDomain:"receits-4e19e.firebaseapp.com",projectId:"receits-4e19e",storageBucket:"receits-4e19e.firebasestorage.app",messagingSenderId:"539797144373",appId:"1:539797144373:web:548f3c8d942493e949827c"};
-const FB_VER='10.14.1', LS_CODE='ledger.syncCode', LS_MODE='ledger.syncMode';
+const FB_VER='10.12.5', LS_CODE='ledger.syncCode', LS_MODE='ledger.syncMode';
 const MAX_SYNC_BYTES=950*1024; // Firestore 문서 1MiB 제한
 const REST_BASE=`https://firestore.googleapis.com/v1/projects/${FB_CONFIG.projectId}/databases/(default)/documents`;
 const POLL_MS=30000;
